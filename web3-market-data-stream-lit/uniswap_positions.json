@@ -14,35 +14,30 @@
       "symbol": "WETH",
       "name": "Wrapped Ether",
       "decimals": 18,
-      "amount": "3.5123E-14",
+      "amount": "0.000000000000035123",
       "uncollected_fees": "0"
     },
     "pool": {
       "address": "0x2f5e87C9312fa29aed5c179E456625D79015299c",
       "fee": 0.05,
-      "current_tick": 270003,
-      "current_sqrt_price_x96": 57761283746231271859844847772053728,
-      "current_price": 1.8815032171531016e-12
+      "current_tick": 270098,
+      "current_sqrt_price_x96": "58035724096286904546167662882706668"
     },
     "position": {
-      "liquidity": 1,
+      "liquidity": "1",
       "tick_lower": 267180,
       "tick_upper": 268260,
-      "price_lower": 446479261515.43567,
-      "price_upper": 2.2397456862964017e-12,
-      "price_range_text": "0.000000<>446479261515.435669",
-      "in_range": false,
-      "price_is_inverted": true
+      "in_range": false
     }
   },
   {
-    "token_id": 4377229,
+    "token_id": 4378886,
     "token0": {
       "address": "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
       "symbol": "WBTC",
       "name": "Wrapped BTC",
       "decimals": 8,
-      "amount": "0.00008679",
+      "amount": "0.0001045",
       "uncollected_fees": "0"
     },
     "token1": {
@@ -50,25 +45,20 @@
       "symbol": "WETH",
       "name": "Wrapped Ether",
       "decimals": 18,
-      "amount": "0.004587331328061553",
+      "amount": "0.005480389316357799",
       "uncollected_fees": "0"
     },
     "pool": {
       "address": "0x2f5e87C9312fa29aed5c179E456625D79015299c",
       "fee": 0.05,
-      "current_tick": 270003,
-      "current_sqrt_price_x96": 57761283746231271859844847772053728,
-      "current_price": 1.8815032171531016e-12
+      "current_tick": 270098,
+      "current_sqrt_price_x96": "58036908460999176006810893435271503"
     },
     "position": {
-      "liquidity": 234737803071,
-      "tick_lower": 269460,
-      "tick_upper": 270550,
-      "price_lower": 561370717746.3798,
-      "price_upper": 1.781354047133943e-12,
-      "price_range_text": "0.000000<>561370717746.379761",
-      "in_range": true,
-      "price_is_inverted": true
+      "liquidity": "281551057912",
+      "tick_lower": 269560,
+      "tick_upper": 270650,
+      "in_range": true
     }
   }
 ]

@@ -1,140 +1,105 @@
 import json
 import math
+import contextlib
 from web3 import Web3
 from decimal import Decimal
+from typing import Dict, List, Tuple, Any, Optional, Union, Generator, Iterator, ContextManager, TypeVar
+
+# Import ABIs directly from the Python module
+from contract_abis.uniswapv3_position_calculator_minimal_abis import (
+    UNISWAP_V3_POOL_ABI,
+    UNISWAP_V3_FACTORY_ABI,
+    ERC20_ABI,
+    POSITION_MANAGER_ABI,
+    ERC721_ABI
+)
+
+# Import PORTFOLIOS to get wallet addresses with uniswap active protocol
+from consts import PORTFOLIOS, UNISWAP_V3_FACTORY_ADDRESS, UNISWAP_V3_POSITIONS_NFT_IDS
 
 # Replace with your Arbitrum (or other network) RPC endpoint
 ARBITRUM_RPC = "https://arb-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ"
 web3 = Web3(Web3.HTTPProvider(ARBITRUM_RPC))
 
-# NonfungiblePositionManager contract address
-UNISWAP_V3_MANAGER_ADDRESS = Web3.to_checksum_address("0xC36442b4a4522E871399CD717aBDD847Ab11FE88")
-
-# Uniswap v3 Pool ABI (minimal for slot0)
-UNISWAP_V3_POOL_ABI = [
-    {
-        "inputs": [],
-        "name": "slot0",
-        "outputs": [
-            {"internalType": "uint160", "name": "sqrtPriceX96", "type": "uint160"},
-            {"internalType": "int24", "name": "tick", "type": "int24"},
-            {"internalType": "uint16", "name": "observationIndex", "type": "uint16"},
-            {"internalType": "uint16", "name": "observationCardinality", "type": "uint16"},
-            {"internalType": "uint16", "name": "observationCardinalityNext", "type": "uint16"},
-            {"internalType": "uint8", "name": "feeProtocol", "type": "uint8"},
-            {"internalType": "bool", "name": "unlocked", "type": "bool"}
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    }
-]
-
-# Uniswap v3 Factory ABI (minimal for getPool)
-UNISWAP_V3_FACTORY_ABI = [
-    {
-        "inputs": [
-            {"internalType": "address", "name": "tokenA", "type": "address"},
-            {"internalType": "address", "name": "tokenB", "type": "address"},
-            {"internalType": "uint24", "name": "fee", "type": "uint24"}
-        ],
-        "name": "getPool",
-        "outputs": [{"internalType": "address", "name": "pool", "type": "address"}],
-        "stateMutability": "view",
-        "type": "function"
-    }
-]
-
-# ERC20 ABI (minimal for name, symbol, decimals)
-ERC20_ABI = [
-    {
-        "constant": True,
-        "inputs": [],
-        "name": "name",
-        "outputs": [{"name": "", "type": "string"}],
-        "type": "function"
-    },
-    {
-        "constant": True,
-        "inputs": [],
-        "name": "symbol",
-        "outputs": [{"name": "", "type": "string"}],
-        "type": "function"
-    },
-    {
-        "constant": True,
-        "inputs": [],
-        "name": "decimals",
-        "outputs": [{"name": "", "type": "uint8"}],
-        "type": "function"
-    }
-]
-
-# Uniswap V3 Position Manager ABI (relevant subset)
-POSITION_MANAGER_ABI = [
-    {
-        "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
-        "name": "positions",
-        "outputs": [
-            {"internalType": "uint96", "name": "nonce", "type": "uint96"},
-            {"internalType": "address", "name": "operator", "type": "address"},
-            {"internalType": "address", "name": "token0", "type": "address"},
-            {"internalType": "address", "name": "token1", "type": "address"},
-            {"internalType": "uint24", "name": "fee", "type": "uint24"},
-            {"internalType": "int24", "name": "tickLower", "type": "int24"},
-            {"internalType": "int24", "name": "tickUpper", "type": "int24"},
-            {"internalType": "uint128", "name": "liquidity", "type": "uint128"},
-            {"internalType": "uint256", "name": "feeGrowthInside0LastX128", "type": "uint256"},
-            {"internalType": "uint256", "name": "feeGrowthInside1LastX128", "type": "uint256"},
-            {"internalType": "uint128", "name": "tokensOwed0", "type": "uint128"},
-            {"internalType": "uint128", "name": "tokensOwed1", "type": "uint128"}
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    }
-]
-
-# Minimal ABI for owner token balance and token ID lookup
-ERC721_ABI = [
-    {
-        "constant": True,
-        "inputs": [{"name": "owner", "type": "address"}],
-        "name": "balanceOf",
-        "outputs": [{"name": "balance", "type": "uint256"}],
-        "type": "function",
-    },
-    {
-        "constant": True,
-        "inputs": [
-            {"name": "owner", "type": "address"},
-            {"name": "index", "type": "uint256"}
-        ],
-        "name": "tokenOfOwnerByIndex",
-        "outputs": [{"name": "tokenId", "type": "uint256"}],
-        "type": "function",
-    }
-]
-
 # Uniswap V3 Factory address
-UNISWAP_V3_FACTORY_ADDRESS = Web3.to_checksum_address("0x1F98431c8aD98523631AE4a59f267346ea31F984")
+UNISWAP_V3_FACTORY_ADDRESS = Web3.to_checksum_address(UNISWAP_V3_FACTORY_ADDRESS)
 
-def get_token_info(token_address):
-    """Get token name, symbol and decimals"""
-    token_contract = web3.eth.contract(address=token_address, abi=ERC20_ABI)
+T = TypeVar('T')  # Type variable for the contract
+
+def get_uniswap_wallet_addresses() -> List[Dict[str, Any]]:
+    """Get wallet addresses from PORTFOLIOS for Uniswap processing"""
+    wallet_addresses = []
     
+    for portfolio_name, portfolio_data in PORTFOLIOS.items():
+        # Check if portfolio has STRATEGY_WALLETS
+        if "STRATEGY_WALLETS" in portfolio_data:
+            for strategy_name, strategy_data in portfolio_data["STRATEGY_WALLETS"].items():
+                if "active_protocols" in strategy_data and "uniswap" in strategy_data["active_protocols"]:
+                    nft_ids = []
+                    # Check for uniswapv3_positions_nft_ids in strategy data
+                    if "uniswapv3_positions_nft_ids" in strategy_data:
+                        nft_ids = strategy_data["uniswapv3_positions_nft_ids"]
+                    
+                    wallet_info = {
+                        "address": strategy_data["address"],
+                        "nft_ids": nft_ids,
+                        "portfolio": portfolio_name,
+                        "strategy": strategy_name
+                    }
+                    wallet_addresses.append(wallet_info)
+        # Support for legacy format where wallets are directly in portfolio data
+        elif "active_protocols" in portfolio_data and "uniswap" in portfolio_data["active_protocols"]:
+            for wallet_address in portfolio_data["wallets"]:
+                nft_ids = []
+                
+                # Check for uniswapv3_positions_nft_ids in portfolio data
+                if "uniswapv3_positions_nft_ids" in portfolio_data:
+                    nft_ids = portfolio_data["uniswapv3_positions_nft_ids"]
+                
+                wallet_info = {
+                    "address": wallet_address,
+                    "nft_ids": nft_ids,
+                    "portfolio": portfolio_name
+                }
+                wallet_addresses.append(wallet_info)
+    
+    return wallet_addresses
+
+@contextlib.contextmanager
+def web3_contract(address: str, abi: List[Dict]) -> Generator[Any, None, None]:
+    """Context manager for web3 contract interactions"""
     try:
-        name = token_contract.functions.name().call()
-        symbol = token_contract.functions.symbol().call()
-        decimals = token_contract.functions.decimals().call()
-        return {"name": name, "symbol": symbol, "decimals": decimals}
+        contract = web3.eth.contract(address=address, abi=abi)
+        yield contract
+    except Exception as e:
+        print(f"Error with contract {address}: {e}")
+        raise
+    finally:
+        # Any cleanup if needed in the future
+        pass
+
+def get_token_info(token_address: str) -> Dict[str, Union[str, int]]:
+    """Get token name, symbol and decimals"""
+    try:
+        with web3_contract(token_address, ERC20_ABI) as token_contract:
+            name = token_contract.functions.name().call()
+            symbol = token_contract.functions.symbol().call()
+            decimals = token_contract.functions.decimals().call()
+            return {"name": name, "symbol": symbol, "decimals": decimals}
     except Exception as e:
         print(f"Error fetching token info for {token_address}: {e}")
         return {"name": "Unknown", "symbol": "Unknown", "decimals": 18}
 
-def get_sqrt_ratio_at_tick(tick):
+def get_sqrt_ratio_at_tick(tick: int) -> int:
     """Calculate sqrtPriceX96 from tick"""
     return int(1.0001 ** (tick / 2) * 2 ** 96)
 
-def get_token_amounts_from_liquidity(liquidity, tick_lower, tick_upper, current_sqrt_price_x96):
+def get_token_amounts_from_liquidity(
+    liquidity: int, 
+    tick_lower: int, 
+    tick_upper: int, 
+    current_sqrt_price_x96: int
+) -> Tuple[int, int]:
     """Calculate token amounts from liquidity, tick range, and current price"""
     liquidity = int(liquidity)
     sqrt_ratio_a_x96 = get_sqrt_ratio_at_tick(tick_lower)
@@ -161,39 +126,49 @@ def get_token_amounts_from_liquidity(liquidity, tick_lower, tick_upper, current_
     
     return amount0, amount1
 
-def calculate_position_details(position_manager, token_id):
+def format_with_decimals(value: Decimal, decimals: int) -> str:
+    """Format a decimal value with the specified number of decimal places"""
+    formatted = f"{value:.{decimals}f}"
+    # Remove trailing zeros while preserving decimal places up to the token's precision
+    if '.' in formatted:
+        formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
+    return formatted
+
+def calculate_position_details(token_id: int, position_manager_address: str) -> Dict[str, Any]:
     """Calculate full details of a Uniswap V3 position"""
     try:
-        # Get position data
-        position = position_manager.functions.positions(token_id).call()
-        
-        token0_address = position[2]
-        token1_address = position[3]
-        fee = position[4]
-        tick_lower = position[5]
-        tick_upper = position[6]
-        liquidity = position[7]
-        tokensOwed0 = position[10]  # Uncollected fees token0
-        tokensOwed1 = position[11]  # Uncollected fees token1
-        
-        # Get token info
-        token0_info = get_token_info(token0_address)
-        token1_info = get_token_info(token1_address)
-        
-        # Get pool address from factory
-        factory = web3.eth.contract(address=UNISWAP_V3_FACTORY_ADDRESS, abi=UNISWAP_V3_FACTORY_ABI)
-        pool_address = factory.functions.getPool(token0_address, token1_address, fee).call()
-        
-        if pool_address == '0x0000000000000000000000000000000000000000':
-            return {
-                "error": f"Pool not found for {token0_info['symbol']}/{token1_info['symbol']} with fee {fee/10000}%"
-            }
-        
-        # Get current price from pool
-        pool_contract = web3.eth.contract(address=pool_address, abi=UNISWAP_V3_POOL_ABI)
-        slot0 = pool_contract.functions.slot0().call()
-        current_sqrt_price_x96 = slot0[0]
-        current_tick = slot0[1]
+        # Use context managers for contract interactions
+        with web3_contract(position_manager_address, POSITION_MANAGER_ABI) as position_manager:
+            # Get position data
+            position = position_manager.functions.positions(token_id).call()
+            
+            token0_address = position[2]
+            token1_address = position[3]
+            fee = position[4]
+            tick_lower = position[5]
+            tick_upper = position[6]
+            liquidity = position[7]
+            tokensOwed0 = position[10]  # Uncollected fees token0
+            tokensOwed1 = position[11]  # Uncollected fees token1
+            
+            # Get token info
+            token0_info = get_token_info(token0_address)
+            token1_info = get_token_info(token1_address)
+            
+            # Get pool address from factory
+            with web3_contract(UNISWAP_V3_FACTORY_ADDRESS, UNISWAP_V3_FACTORY_ABI) as factory:
+                pool_address = factory.functions.getPool(token0_address, token1_address, fee).call()
+                
+                if pool_address == '0x0000000000000000000000000000000000000000':
+                    return {
+                        "error": f"Pool not found for {token0_info['symbol']}/{token1_info['symbol']} with fee {fee/10000}%"
+                    }
+                
+                # Get current price from pool
+                with web3_contract(pool_address, UNISWAP_V3_POOL_ABI) as pool_contract:
+                    slot0 = pool_contract.functions.slot0().call()
+                    current_sqrt_price_x96 = slot0[0]
+                    current_tick = slot0[1]
         
         # Calculate token amounts
         amount0, amount1 = get_token_amounts_from_liquidity(liquidity, tick_lower, tick_upper, current_sqrt_price_x96)
@@ -206,122 +181,173 @@ def calculate_position_details(position_manager, token_id):
         fees0_decimal = Decimal(tokensOwed0) / Decimal(10 ** token0_info['decimals'])
         fees1_decimal = Decimal(tokensOwed1) / Decimal(10 ** token1_info['decimals'])
         
-        # Calculate price range
-        price_lower = (1.0001 ** tick_lower) 
-        price_upper = (1.0001 ** tick_upper)
-        current_price = (1.0001 ** current_tick)
-        
-        # If token0 is the base token (like WETH), invert the prices to get the quote price
-        # This makes it match what you typically see on interfaces
-        price_is_inverted = False
-        if token0_info['symbol'] in ["WETH", "ETH", "WBTC", "BTC"]:
-            price_lower = 1 / price_upper
-            price_upper = 1 / price_lower
-            current_price = 1 / current_price
-            price_is_inverted = True
-        
-        # Format the price range as seen on block explorers
-        price_range_text = f"{price_lower:.6f}<>{price_upper:.6f}"
-        
+        # Store current tick information for reference
+        current_tick_info = current_tick
+            
         return {
             "token_id": token_id,
+            "position_manager": position_manager_address,
             "token0": {
                 "address": token0_address,
                 "symbol": token0_info['symbol'],
                 "name": token0_info['name'],
                 "decimals": token0_info['decimals'],
-                "amount": str(amount0_decimal),
-                "uncollected_fees": str(fees0_decimal)
+                "amount": format_with_decimals(amount0_decimal, token0_info['decimals']),
+                "uncollected_fees": format_with_decimals(fees0_decimal, token0_info['decimals'])
             },
             "token1": {
                 "address": token1_address,
                 "symbol": token1_info['symbol'],
                 "name": token1_info['name'],
                 "decimals": token1_info['decimals'],
-                "amount": str(amount1_decimal),
-                "uncollected_fees": str(fees1_decimal)
+                "amount": format_with_decimals(amount1_decimal, token1_info['decimals']),
+                "uncollected_fees": format_with_decimals(fees1_decimal, token1_info['decimals'])
             },
             "pool": {
                 "address": pool_address,
                 "fee": fee / 10000,  # Convert to percentage
                 "current_tick": current_tick,
-                "current_sqrt_price_x96": current_sqrt_price_x96,
-                "current_price": current_price,
+                "current_sqrt_price_x96": str(current_sqrt_price_x96),
             },
             "position": {
-                "liquidity": liquidity,
+                "liquidity": str(liquidity),
                 "tick_lower": tick_lower,
                 "tick_upper": tick_upper,
-                "price_lower": price_lower if not price_is_inverted else 1/price_lower,
-                "price_upper": price_upper if not price_is_inverted else 1/price_upper,
-                "price_range_text": price_range_text,
-                "in_range": tick_lower <= current_tick <= tick_upper,
-                "price_is_inverted": price_is_inverted
+                "in_range": tick_lower <= current_tick <= tick_upper
             }
         }
     
     except Exception as e:
         return {"error": f"Error calculating position details for token ID {token_id}: {str(e)}"}
 
-def main():
-    # Create contract instances
-    position_manager = web3.eth.contract(address=UNISWAP_V3_MANAGER_ADDRESS, abi=POSITION_MANAGER_ABI)
-    erc721_contract = web3.eth.contract(address=UNISWAP_V3_MANAGER_ADDRESS, abi=ERC721_ABI)
+def format_decimal_str(decimal_str: str, token_symbol: str, token_decimals: int) -> str:
+    """Format a decimal string for display with appropriate precision based on token and its decimals"""
+    parts = decimal_str.split('.')
     
-    # Use fixed wallet address for testing
-    owner_address = Web3.to_checksum_address("0x88F199ea919C6ac124d3B2407f9E2b4B700fa47D")
+    # Ensure we display the full precision based on token decimals
+    if len(parts) == 1:
+        # No decimal part, add one with appropriate zeros
+        return f"{parts[0]}.{'0' * token_decimals}"
+    elif len(parts) == 2:
+        # Pad or truncate decimal part to match token's decimals
+        return f"{parts[0]}.{parts[1].ljust(token_decimals, '0')[:token_decimals]}"
     
-    print(f"\nFetching Uniswap V3 positions for {owner_address}...")
-    
-    # Get token IDs owned by the address
-    try:
-        balance = erc721_contract.functions.balanceOf(owner_address).call()
+    # Fallback
+    return decimal_str
+
+def get_token_ids(wallet_address: str, nft_manager_address: str) -> Generator[int, None, None]:
+    """Generator that yields token IDs owned by the given wallet"""
+    with web3_contract(nft_manager_address, ERC721_ABI) as erc721_contract:
+        balance = erc721_contract.functions.balanceOf(wallet_address).call()
         
         if balance == 0:
-            print(f"No Uniswap V3 positions found for {owner_address}")
             return
-        
-        print(f"Found {balance} Uniswap V3 positions\n")
-        
-        token_ids = []
-        for i in range(balance):
-            token_id = erc721_contract.functions.tokenOfOwnerByIndex(owner_address, i).call()
-            token_ids.append(token_id)
-        
-        positions_data = []
-        
-        # Process each position
-        for token_id in token_ids:
-            print(f"Processing position #{token_id}...")
-            position_details = calculate_position_details(position_manager, token_id)
-            positions_data.append(position_details)
             
-            # Print a nice summary for each position
-            if "error" not in position_details:
-                p = position_details
-                print(f"\n✅ Position #{p['token_id']}")
-                print(f"   Pool: {p['token0']['symbol']}/{p['token1']['symbol']} {p['pool']['fee']}%")
-                print(f"   Current price: {p['pool']['current_price']:.8f}")
-                print(f"   Price range: {p['position']['price_range_text']}")
-                print(f"   Status: {'🟢 In Range' if p['position']['in_range'] else '🔴 Out of Range'}")
-                print(f"   Token quantities:")
-                print(f"     • {p['token0']['amount']} {p['token0']['symbol']}")
-                print(f"     • {p['token1']['amount']} {p['token1']['symbol']}")
-                print(f"   Uncollected fees:")
-                print(f"     • {p['token0']['uncollected_fees']} {p['token0']['symbol']}")
-                print(f"     • {p['token1']['uncollected_fees']} {p['token1']['symbol']}")
-                print("")
-            else:
-                print(f"   ❌ Error: {position_details['error']}")
+        for i in range(balance):
+            token_id = erc721_contract.functions.tokenOfOwnerByIndex(wallet_address, i).call()
+            yield token_id
+
+def process_positions(wallet_info: Dict[str, Any]) -> Generator[Dict[str, Any], None, None]:
+    """Generator that processes positions and yields position details"""
+    wallet_address = wallet_info["address"]
+    
+    for nft_id in wallet_info["nft_ids"]:
+        if nft_id in UNISWAP_V3_POSITIONS_NFT_IDS:
+            position_manager_address = Web3.to_checksum_address(
+                UNISWAP_V3_POSITIONS_NFT_IDS[nft_id]["address"]
+            )
+            
+            print(f"Checking positions using {nft_id} contract at {position_manager_address}")
+            
+            for token_id in get_token_ids(wallet_address, position_manager_address):
+                position_details = calculate_position_details(token_id, position_manager_address)
+                yield position_details
+        else:
+            print(f"Warning: NFT ID '{nft_id}' not found in UNISWAP_V3_POSITIONS_NFT_IDS")
+
+def print_position_summary(position: Dict[str, Any]) -> None:
+    """Print a summary of a Uniswap V3 position"""
+    print("\n" + "=" * 80)
+    print(f"Position ID: {position['token_id']}")
+    print(f"Position Manager: {position['position_manager']}")
+    print(f"Pool: {position['pool']['address']}")
+    print(f"Tokens: {position['token0']['symbol']}/{position['token1']['symbol']}")
+    print(f"Fee Tier: {position['pool']['fee']}%")
+    print(f"Price Range: {position['position']['tick_lower']} - {position['position']['tick_upper']}")
+    
+    # Token amounts
+    token0_amount = float(position['token0']['amount'])
+    token1_amount = float(position['token1']['amount'])
+    
+    # Assuming we don't have price data in the position object
+    # We'll just show the amounts without USD values for now
+    print(f"\nToken Amounts:")
+    print(f"  {position['token0']['symbol']}: {token0_amount}")
+    print(f"  {position['token1']['symbol']}: {token1_amount}")
+    
+    # Fees
+    fees0 = float(position['token0']['uncollected_fees'])
+    fees1 = float(position['token1']['uncollected_fees'])
+    
+    print(f"\nUncollected Fees:")
+    print(f"  {position['token0']['symbol']}: {fees0}")
+    print(f"  {position['token1']['symbol']}: {fees1}")
+    
+    # Position status
+    liquidity = int(position['position']['liquidity'])
+    status = "Active" if liquidity > 0 else "Closed"
+    print(f"\nStatus: {status}")
+    
+    if liquidity > 0:
+        current_tick = position['pool']['current_tick']
+        tick_lower = position['position']['tick_lower']
+        tick_upper = position['position']['tick_upper']
         
-        # Save all details to a JSON file
-        with open("uniswap_positions.json", "w") as f:
-            json.dump(positions_data, f, indent=2)
+        if tick_lower <= current_tick <= tick_upper:
+            price_status = "In Range"
+        elif current_tick < tick_lower:
+            price_status = "Below Range"
+        else:
+            price_status = "Above Range"
         
-        print(f"\nSaved detailed position data to uniswap_positions.json")
+        print(f"Current Tick: {current_tick} ({price_status})")
+        print(f"Position Range: {tick_lower} to {tick_upper}")
+    
+    print("=" * 80)
+
+def main():
+    """Main function to calculate Uniswap V3 position details"""
+    try:
+        # Get wallet addresses with NFT IDs
+        wallet_addresses = get_uniswap_wallet_addresses()
         
+        if not wallet_addresses:
+            print("No wallet addresses found for Uniswap")
+            return
+            
+        for wallet_info in wallet_addresses:
+            print(f"\nProcessing wallet: {wallet_info['address']}")
+            
+            try:
+                # Use a context manager for the file output
+                positions_data = list(process_positions(wallet_info))
+                
+                if not positions_data:
+                    print(f"No positions found for wallet {wallet_info['address']}")
+                    continue
+                    
+                for position in positions_data:
+                    if "error" in position:
+                        print(f"Error: {position['error']}")
+                        continue
+                    
+                    print_position_summary(position)
+                
+            except Exception as e:
+                print(f"Error processing wallet {wallet_info['address']}: {str(e)}")
+    
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error in main function: {str(e)}")
 
 if __name__ == "__main__":
     main() 

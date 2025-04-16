@@ -40,11 +40,14 @@ PORTFOLIOS = {
         "STRATEGY_WALLETS":{
             "FDA_Lend_Polygon_1": {
                 "address": "0xb90839A51511042c69553AC4e60aa184449f5bc7",
-                "active_protocols": ["aave"]
+                "active_protocols": ["aave"],
+                "active_networks": ["polygon"]
             },
             "FDA_SpecSpec_Arb": {
                 "address": "0x88F199ea919C6ac124d3B2407f9E2b4B700fa47D",
-                "active_protocols": ["uniswap"]
+                "active_protocols": ["uniswap"],
+                "active_networks": ["arbitrum"],
+                "uniswapv3_positions_nft_ids": ["ARBITRUM_UNISWAP_V3_POSITIONS_NFT_V1"]
             }
         }
     }
@@ -76,6 +79,9 @@ TOKENS = {
         "decimals": 8
     },
 }
+
+
+UNISWAP_V3_FACTORY_ADDRESS = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
 
 UNISWAP_V3_POSITIONS_NFT_IDS = {
     "ARBITRUM_UNISWAP_V3_POSITIONS_NFT_V1": {
