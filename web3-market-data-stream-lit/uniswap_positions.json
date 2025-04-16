@@ -1,0 +1,74 @@
+[
+  {
+    "token_id": 4311306,
+    "token0": {
+      "address": "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+      "symbol": "WBTC",
+      "name": "Wrapped BTC",
+      "decimals": 8,
+      "amount": "0",
+      "uncollected_fees": "0"
+    },
+    "token1": {
+      "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "symbol": "WETH",
+      "name": "Wrapped Ether",
+      "decimals": 18,
+      "amount": "3.5123E-14",
+      "uncollected_fees": "0"
+    },
+    "pool": {
+      "address": "0x2f5e87C9312fa29aed5c179E456625D79015299c",
+      "fee": 0.05,
+      "current_tick": 270003,
+      "current_sqrt_price_x96": 57761283746231271859844847772053728,
+      "current_price": 1.8815032171531016e-12
+    },
+    "position": {
+      "liquidity": 1,
+      "tick_lower": 267180,
+      "tick_upper": 268260,
+      "price_lower": 446479261515.43567,
+      "price_upper": 2.2397456862964017e-12,
+      "price_range_text": "0.000000<>446479261515.435669",
+      "in_range": false,
+      "price_is_inverted": true
+    }
+  },
+  {
+    "token_id": 4377229,
+    "token0": {
+      "address": "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+      "symbol": "WBTC",
+      "name": "Wrapped BTC",
+      "decimals": 8,
+      "amount": "0.00008679",
+      "uncollected_fees": "0"
+    },
+    "token1": {
+      "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "symbol": "WETH",
+      "name": "Wrapped Ether",
+      "decimals": 18,
+      "amount": "0.004587331328061553",
+      "uncollected_fees": "0"
+    },
+    "pool": {
+      "address": "0x2f5e87C9312fa29aed5c179E456625D79015299c",
+      "fee": 0.05,
+      "current_tick": 270003,
+      "current_sqrt_price_x96": 57761283746231271859844847772053728,
+      "current_price": 1.8815032171531016e-12
+    },
+    "position": {
+      "liquidity": 234737803071,
+      "tick_lower": 269460,
+      "tick_upper": 270550,
+      "price_lower": 561370717746.3798,
+      "price_upper": 1.781354047133943e-12,
+      "price_range_text": "0.000000<>561370717746.379761",
+      "in_range": true,
+      "price_is_inverted": true
+    }
+  }
+]
