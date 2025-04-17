@@ -6,6 +6,19 @@ class ApiService:
     
     def __init__(self, api_base_url="http://localhost:8000"):
         self.api_base_url = api_base_url
+    
+    def get(self, endpoint, params=None):
+        """Generic method to make GET requests to any API endpoint."""
+        try:
+            response = requests.get(
+                f"{self.api_base_url}/api/{endpoint}",
+                params=params
+            )
+            response.raise_for_status()  # Raise exception for 4XX/5XX responses
+            return response.json()
+        except Exception as e:
+            st.error(f"Error fetching data from /{endpoint}: {e}")
+            return None
         
     def fetch_single_asset(self, asset, metrics):
         """Fetch data for a single asset with specified metrics."""

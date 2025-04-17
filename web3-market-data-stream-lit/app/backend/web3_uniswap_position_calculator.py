@@ -15,16 +15,28 @@ from contract_abis.uniswapv3_position_calculator_minimal_abis import (
 )
 
 # Import PORTFOLIOS to get wallet addresses with uniswap active protocol
-from consts import PORTFOLIOS, UNISWAP_V3_FACTORY_ADDRESS, UNISWAP_V3_POSITIONS_NFT_IDS
+from consts import PORTFOLIOS, UNISWAP_V3_FACTORY_ADDRESS, UNISWAP_V3_POSITIONS_NFT_IDS, RPCS
 
-# Replace with your Arbitrum (or other network) RPC endpoint
-ARBITRUM_RPC = "https://arb-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ"
-web3 = Web3(Web3.HTTPProvider(ARBITRUM_RPC))
+# Dictionary to store web3 instances for different networks
+web3_instances = {}
 
 # Uniswap V3 Factory address
 UNISWAP_V3_FACTORY_ADDRESS = Web3.to_checksum_address(UNISWAP_V3_FACTORY_ADDRESS)
 
 T = TypeVar('T')  # Type variable for the contract
+
+def get_web3_instance(network: str) -> Web3:
+    """Get or create a Web3 instance for the specified network"""
+    if network in web3_instances:
+        return web3_instances[network]
+    
+    if network in RPCS:
+        rpc_url = RPCS[network]
+        web3_instance = Web3(Web3.HTTPProvider(rpc_url))
+        web3_instances[network] = web3_instance
+        return web3_instance
+    else:
+        raise ValueError(f"No RPC URL configured for network: {network}")
 
 def get_uniswap_wallet_addresses() -> List[Dict[str, Any]]:
     """Get wallet addresses from PORTFOLIOS for Uniswap processing"""
@@ -40,11 +52,17 @@ def get_uniswap_wallet_addresses() -> List[Dict[str, Any]]:
                     if "uniswapv3_positions_nft_ids" in strategy_data:
                         nft_ids = strategy_data["uniswapv3_positions_nft_ids"]
                     
+                    # Get the active network for this strategy
+                    network = "arbitrum"  # Default to arbitrum if not specified
+                    if "active_networks" in strategy_data and strategy_data["active_networks"]:
+                        network = strategy_data["active_networks"][0]  # Use the first network in the list
+                    
                     wallet_info = {
                         "address": strategy_data["address"],
                         "nft_ids": nft_ids,
                         "portfolio": portfolio_name,
-                        "strategy": strategy_name
+                        "strategy": strategy_name,
+                        "network": network
                     }
                     wallet_addresses.append(wallet_info)
         # Support for legacy format where wallets are directly in portfolio data
@@ -56,38 +74,45 @@ def get_uniswap_wallet_addresses() -> List[Dict[str, Any]]:
                 if "uniswapv3_positions_nft_ids" in portfolio_data:
                     nft_ids = portfolio_data["uniswapv3_positions_nft_ids"]
                 
+                # Get the active network for this portfolio
+                network = "arbitrum"  # Default to arbitrum if not specified
+                if "active_networks" in portfolio_data and portfolio_data["active_networks"]:
+                    network = portfolio_data["active_networks"][0]  # Use the first network in the list
+                
                 wallet_info = {
                     "address": wallet_address,
                     "nft_ids": nft_ids,
-                    "portfolio": portfolio_name
+                    "portfolio": portfolio_name,
+                    "network": network
                 }
                 wallet_addresses.append(wallet_info)
     
     return wallet_addresses
 
 @contextlib.contextmanager
-def web3_contract(address: str, abi: List[Dict]) -> Generator[Any, None, None]:
+def web3_contract(address: str, abi: List[Dict], network: str = "arbitrum") -> Generator[Any, None, None]:
     """Context manager for web3 contract interactions"""
     try:
+        web3 = get_web3_instance(network)
         contract = web3.eth.contract(address=address, abi=abi)
         yield contract
     except Exception as e:
-        print(f"Error with contract {address}: {e}")
+        print(f"Error with contract {address} on network {network}: {e}")
         raise
     finally:
         # Any cleanup if needed in the future
         pass
 
-def get_token_info(token_address: str) -> Dict[str, Union[str, int]]:
+def get_token_info(token_address: str, network: str = "arbitrum") -> Dict[str, Union[str, int]]:
     """Get token name, symbol and decimals"""
     try:
-        with web3_contract(token_address, ERC20_ABI) as token_contract:
+        with web3_contract(token_address, ERC20_ABI, network) as token_contract:
             name = token_contract.functions.name().call()
             symbol = token_contract.functions.symbol().call()
             decimals = token_contract.functions.decimals().call()
             return {"name": name, "symbol": symbol, "decimals": decimals}
     except Exception as e:
-        print(f"Error fetching token info for {token_address}: {e}")
+        print(f"Error fetching token info for {token_address} on network {network}: {e}")
         return {"name": "Unknown", "symbol": "Unknown", "decimals": 18}
 
 def get_sqrt_ratio_at_tick(tick: int) -> int:
@@ -134,11 +159,11 @@ def format_with_decimals(value: Decimal, decimals: int) -> str:
         formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
     return formatted
 
-def calculate_position_details(token_id: int, position_manager_address: str) -> Dict[str, Any]:
+def calculate_position_details(token_id: int, position_manager_address: str, network: str = "arbitrum") -> Dict[str, Any]:
     """Calculate full details of a Uniswap V3 position"""
     try:
         # Use context managers for contract interactions
-        with web3_contract(position_manager_address, POSITION_MANAGER_ABI) as position_manager:
+        with web3_contract(position_manager_address, POSITION_MANAGER_ABI, network) as position_manager:
             # Get position data
             position = position_manager.functions.positions(token_id).call()
             
@@ -152,11 +177,11 @@ def calculate_position_details(token_id: int, position_manager_address: str) -> 
             tokensOwed1 = position[11]  # Uncollected fees token1
             
             # Get token info
-            token0_info = get_token_info(token0_address)
-            token1_info = get_token_info(token1_address)
+            token0_info = get_token_info(token0_address, network)
+            token1_info = get_token_info(token1_address, network)
             
             # Get pool address from factory
-            with web3_contract(UNISWAP_V3_FACTORY_ADDRESS, UNISWAP_V3_FACTORY_ABI) as factory:
+            with web3_contract(UNISWAP_V3_FACTORY_ADDRESS, UNISWAP_V3_FACTORY_ABI, network) as factory:
                 pool_address = factory.functions.getPool(token0_address, token1_address, fee).call()
                 
                 if pool_address == '0x0000000000000000000000000000000000000000':
@@ -165,7 +190,7 @@ def calculate_position_details(token_id: int, position_manager_address: str) -> 
                     }
                 
                 # Get current price from pool
-                with web3_contract(pool_address, UNISWAP_V3_POOL_ABI) as pool_contract:
+                with web3_contract(pool_address, UNISWAP_V3_POOL_ABI, network) as pool_contract:
                     slot0 = pool_contract.functions.slot0().call()
                     current_sqrt_price_x96 = slot0[0]
                     current_tick = slot0[1]
@@ -235,9 +260,9 @@ def format_decimal_str(decimal_str: str, token_symbol: str, token_decimals: int)
     # Fallback
     return decimal_str
 
-def get_token_ids(wallet_address: str, nft_manager_address: str) -> Generator[int, None, None]:
+def get_token_ids(wallet_address: str, nft_manager_address: str, network: str = "arbitrum") -> Generator[int, None, None]:
     """Generator that yields token IDs owned by the given wallet"""
-    with web3_contract(nft_manager_address, ERC721_ABI) as erc721_contract:
+    with web3_contract(nft_manager_address, ERC721_ABI, network) as erc721_contract:
         balance = erc721_contract.functions.balanceOf(wallet_address).call()
         
         if balance == 0:
@@ -250,6 +275,7 @@ def get_token_ids(wallet_address: str, nft_manager_address: str) -> Generator[in
 def process_positions(wallet_info: Dict[str, Any]) -> Generator[Dict[str, Any], None, None]:
     """Generator that processes positions and yields position details"""
     wallet_address = wallet_info["address"]
+    network = wallet_info.get("network", "arbitrum")
     
     for nft_id in wallet_info["nft_ids"]:
         if nft_id in UNISWAP_V3_POSITIONS_NFT_IDS:
@@ -257,10 +283,10 @@ def process_positions(wallet_info: Dict[str, Any]) -> Generator[Dict[str, Any], 
                 UNISWAP_V3_POSITIONS_NFT_IDS[nft_id]["address"]
             )
             
-            print(f"Checking positions using {nft_id} contract at {position_manager_address}")
+            print(f"Checking positions using {nft_id} contract at {position_manager_address} on network {network}")
             
-            for token_id in get_token_ids(wallet_address, position_manager_address):
-                position_details = calculate_position_details(token_id, position_manager_address)
+            for token_id in get_token_ids(wallet_address, position_manager_address, network):
+                position_details = calculate_position_details(token_id, position_manager_address, network)
                 yield position_details
         else:
             print(f"Warning: NFT ID '{nft_id}' not found in UNISWAP_V3_POSITIONS_NFT_IDS")

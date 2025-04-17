@@ -34,6 +34,11 @@ BASE_URLS = {
     "base": "https://api.basescan.org/api"
 }
 
+# All these fields are for on-chain data jobs
+RPCS = {
+    "arbitrum" : "https://arb-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",   
+}
+
 # TODO always update wallets 
 PORTFOLIOS = {
     "FDA_PORTOLFIO_3" : {

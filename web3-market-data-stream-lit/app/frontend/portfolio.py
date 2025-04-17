@@ -3,17 +3,17 @@ import pandas as pd
 import sys
 import os
 
-# Add the backend directory to the path so we can import from it
-sys.path.append(os.path.join(os.path.dirname(__file__), '../backend'))
-from consts import DEFAULT_ETH_ADDRESSES
-from api_service import ApiService
+# Direct import using explicit file path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import backend.consts as consts
+DEFAULT_ETH_ADDRESSES = consts.DEFAULT_ETH_ADDRESSES
 
-# Initialize API service - will be reused between renders
-api_service = ApiService()
-
-def render_portfolio_page():
+def render_portfolio_page(api_service):
     """
     Render the portfolio balances page.
+    
+    Args:
+        api_service: Instance of ApiService for making API calls
     """
     st.subheader("Portfolio Balances")
     

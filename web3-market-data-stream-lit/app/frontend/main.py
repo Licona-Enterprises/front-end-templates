@@ -5,11 +5,15 @@ from datetime import datetime
 import sys
 import os
 
-# Add the backend directory to the path so we can import from it
-sys.path.append(os.path.join(os.path.dirname(__file__), '../backend'))
-from consts import DEFAULT_ASSETS, METRIC_FREQUENCIES, AUTO_REFRESH_INTERVAL
+# Direct import using explicit file path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import backend.consts as consts
+DEFAULT_ASSETS = consts.DEFAULT_ASSETS
+METRIC_FREQUENCIES = consts.METRIC_FREQUENCIES
+AUTO_REFRESH_INTERVAL = consts.AUTO_REFRESH_INTERVAL
 
 from portfolio import render_portfolio_page  # Import the portfolio module
+from uniswap import render_uniswap_page  # Import the uniswap module
 from api_service import ApiService  # Import the API service
 
 # Initialize API service
@@ -96,7 +100,7 @@ def fetch_market_data():
     return market_data
 
 # Create tabs for different sections
-tab1, tab2 = st.tabs(["Market Data", "Portfolio Balances"])
+tab1, tab2, tab3 = st.tabs(["Market Data", "Portfolio Balances", "Uniswap Positions"])
 
 with tab1:
     # Create columns for header area
@@ -350,8 +354,12 @@ with tab1:
         st.warning(f"No price data available for: {', '.join(missing_assets)}. This may be due to API limitations.")
 
 with tab2:
-    # Render the portfolio balances page from the portfolio module
-    render_portfolio_page()
+    # Render portfolio page from imported module
+    render_portfolio_page(api_service)
+
+with tab3:
+    # Render uniswap page from imported module
+    render_uniswap_page(api_service)
 
 # Store the current tab for refresh logic
 if "tab_change_enabled" not in st.session_state:
