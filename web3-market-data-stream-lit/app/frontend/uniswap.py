@@ -7,6 +7,7 @@ import os
 # Direct import using explicit file path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import backend.consts as consts
+from backend.coinmetrics import CoinMetricsService
 PORTFOLIOS = consts.PORTFOLIOS
 
 def plot_tick_range(current_tick, lower_tick, upper_tick):
@@ -96,6 +97,23 @@ def render_uniswap_page(api_service):
     with col2:
         strategy_filter = st.text_input("Filter by Strategy", key="strategy_filter")
             
+    # Function to fetch token prices using CoinMetricsService
+    def fetch_token_prices(token_symbols):
+        """Fetch real-time token prices from CoinMetrics API"""
+        try:
+            # Initialize CoinMetricsService
+            coinmetrics = CoinMetricsService()
+            
+            # Fetch prices using the synchronous method
+            prices = coinmetrics.fetch_token_prices_sync(token_symbols)
+            
+            return prices
+        except Exception as e:
+            st.error(f"Error fetching token prices: {str(e)}")
+            st.warning("Please make sure the COINMETRICS_API_KEY environment variable is set correctly.")
+            # Return empty dict - the UI will need to handle missing prices
+            return {}
+    
     # Function to fetch Uniswap positions data - moved up to use in both table and positions
     def fetch_uniswap_positions():
         params = {}
@@ -119,11 +137,21 @@ def render_uniswap_page(api_service):
     if 'selected_position_id' not in st.session_state:
         st.session_state.selected_position_id = None
     
-    # Display portfolio summary without heading
+    # Display position summary without heading
     
     if positions_data and "positions" in positions_data:
         positions = positions_data["positions"]
         
+        # Collect all token symbols to fetch prices
+        token_symbols = set()
+        for position in positions:
+            token_symbols.add(position['token0']['symbol'])
+            token_symbols.add(position['token1']['symbol'])
+        
+        # Fetch token prices
+        with st.spinner("Fetching token prices..."):
+            token_prices = fetch_token_prices(list(token_symbols))
+            
         # Create a structured table of positions with status information
         position_table_data = []
         for position in positions:
@@ -151,17 +179,34 @@ def render_uniswap_page(api_service):
                 token0_amount = float(position['token0']['amount'])
                 token1_amount = float(position['token1']['amount'])
                 
+                # Calculate USD values
+                token0_symbol = position['token0']['symbol']
+                token1_symbol = position['token1']['symbol']
+                token0_price = token_prices.get(token0_symbol, 0)
+                token1_price = token_prices.get(token1_symbol, 0)
+                
+                # Show warning if prices are missing
+                if token0_price == 0 or token1_price == 0:
+                    st.warning(f"Could not fetch real-time prices for {token0_symbol if token0_price == 0 else ''} {token1_symbol if token1_price == 0 else ''}. Value calculations may be inaccurate.")
+                
+                token0_value_usd = token0_amount * token0_price
+                token1_value_usd = token1_amount * token1_price
+                total_value_usd = token0_value_usd + token1_value_usd
+                
                 # Add to table data
                 position_table_data.append({
-                    "Position ID": position['token_id'],
                     "Portfolio": position.get('portfolio', 'Unknown'),
                     "Strategy": position.get('strategy', 'N/A'),
-                    "Wallet": position['wallet_address'],
-                    "Tokens": f"{position['token0']['symbol']} - {position['token1']['symbol']}",
-                    "Status": status,
-                    "Price Status": price_status,
+                    "Tokens": f"{token0_symbol} - {token1_symbol}",
                     "Token0 Amount": token0_amount,
                     "Token1 Amount": token1_amount,
+                    "Token0 USD": token0_value_usd,
+                    "Token1 USD": token1_value_usd,
+                    "Total USD": total_value_usd,
+                    "Status": status,
+                    "Price Status": price_status,
+                    "Position ID": position['token_id'],
+                    "Wallet": position['wallet_address'],
                     "Fee Tier": f"{position['pool']['fee']}%"
                 })
         
@@ -187,6 +232,9 @@ def render_uniswap_page(api_service):
                     "Price Status": st.column_config.TextColumn("Price Status", width="medium"),
                     "Token0 Amount": st.column_config.NumberColumn("Token0", width="medium", format="%.6f"),
                     "Token1 Amount": st.column_config.NumberColumn("Token1", width="medium", format="%.6f"),
+                    "Token0 USD": st.column_config.NumberColumn("Token0 USD", width="medium", format="$%.2f"),
+                    "Token1 USD": st.column_config.NumberColumn("Token1 USD", width="medium", format="$%.2f"),
+                    "Total USD": st.column_config.NumberColumn("Total USD", width="medium", format="$%.2f"),
                     "Fee Tier": st.column_config.TextColumn("Fee Tier", width="small")
                 },
                 use_container_width=True,
@@ -233,6 +281,24 @@ def render_uniswap_page(api_service):
                 tick_lower = selected_position['position']['tick_lower']
                 tick_upper = selected_position['position']['tick_upper']
                 
+                # Get token amounts and calculate USD values
+                token0_symbol = selected_position['token0']['symbol']
+                token1_symbol = selected_position['token1']['symbol']
+                token0_amount = float(selected_position['token0']['amount'])
+                token1_amount = float(selected_position['token1']['amount'])
+                
+                # Calculate USD values if prices are available
+                token0_price = token_prices.get(token0_symbol, 0)
+                token1_price = token_prices.get(token1_symbol, 0)
+                
+                # Show warning if prices are missing
+                if token0_price == 0 or token1_price == 0:
+                    st.warning(f"Could not fetch real-time prices for {token0_symbol if token0_price == 0 else ''} {token1_symbol if token1_price == 0 else ''}. Value calculations may be inaccurate.")
+                
+                token0_value_usd = token0_amount * token0_price
+                token1_value_usd = token1_amount * token1_price
+                total_value_usd = token0_value_usd + token1_value_usd
+                
                 price_status = "N/A"
                 if liquidity > 0:
                     if tick_lower <= current_tick <= tick_upper:
@@ -255,10 +321,13 @@ def render_uniswap_page(api_service):
                         "Price Status": price_status,
                         "Liquidity": format(liquidity, ","),
                         "Fee Tier": f"{selected_position['pool']['fee']}%",
-                        f"{selected_position['token0']['symbol']} Amount": float(selected_position['token0']['amount']),
-                        f"{selected_position['token1']['symbol']} Amount": float(selected_position['token1']['amount']),
-                        f"{selected_position['token0']['symbol']} Uncollected Fees": float(selected_position['token0']['uncollected_fees']),
-                        f"{selected_position['token1']['symbol']} Uncollected Fees": float(selected_position['token1']['uncollected_fees']),
+                        f"{token0_symbol} Amount": token0_amount,
+                        f"{token1_symbol} Amount": token1_amount,
+                        f"{token0_symbol} Value (USD)": f"${token0_value_usd:.2f}",
+                        f"{token1_symbol} Value (USD)": f"${token1_value_usd:.2f}",
+                        "Total Value (USD)": f"${total_value_usd:.2f}",
+                        f"{token0_symbol} Uncollected Fees": float(selected_position['token0']['uncollected_fees']),
+                        f"{token1_symbol} Uncollected Fees": float(selected_position['token1']['uncollected_fees']),
                     }
                     
                     # Create DataFrame
@@ -363,90 +432,4 @@ def render_uniswap_page(api_service):
                     st.session_state.selected_position_id = None
                     st.rerun()
     else:
-        st.info("No position data available. Please check API connection.")
-    
-    # Display all positions section without heading
-    
-    # Re-use positions data from earlier fetch
-    if positions_data and "positions" in positions_data:
-        positions = positions_data["positions"]
-        
-        if len(positions) == 0:
-            st.info("No positions found with the current filters.")
-        else:
-            # Create expandable sections for each position
-            for idx, position in enumerate(positions):
-                # Determine status for color coding
-                liquidity = int(position['position']['liquidity'])
-                status = "Active" if liquidity > 0 else "Closed"
-                
-                # Determine price status for color
-                price_status_color = "gray"
-                price_status_text = "Closed"
-                
-                if liquidity > 0:
-                    current_tick = position['pool']['current_tick']
-                    tick_lower = position['position']['tick_lower']
-                    tick_upper = position['position']['tick_upper']
-                    
-                    if tick_lower <= current_tick <= tick_upper:
-                        price_status_text = "In Range"
-                        price_status_color = "green"
-                    elif current_tick < tick_lower:
-                        price_status_text = "Below Range"
-                        price_status_color = "red"
-                    else:
-                        price_status_text = "Above Range"
-                        price_status_color = "red"
-                
-                # Create expandable section with color-coded status
-                with st.expander(
-                    f"Position #{position['token_id']} - {position['token0']['symbol']}/{position['token1']['symbol']} - "
-                    f"<span style='color:{price_status_color}'>{price_status_text}</span>", 
-                    expanded=idx==0
-                ):
-                    # Organize position data into columns
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write("### Position Details")
-                        st.write(f"**Position ID:** {position['token_id']}")
-                        st.write(f"**Wallet:** {position['wallet_address']}")
-                        st.write(f"**Portfolio:** {position['portfolio']}")
-                        if "strategy" in position:
-                            st.write(f"**Strategy:** {position['strategy']}")
-                        st.write(f"**Pool:** {position['pool']['address']}")
-                        st.write(f"**Fee Tier:** {position['pool']['fee']}%")
-                        
-                        # Status info
-                        st.write(f"**Status:** {status}")
-                        
-                        if liquidity > 0:
-                            st.markdown(f"**Price Status:** <span style='color:{price_status_color}'>{price_status_text}</span>", unsafe_allow_html=True)
-                    
-                    with col2:
-                        st.write("### Token Amounts")
-                        
-                        # Display token0 info
-                        token0_amount = float(position['token0']['amount'])
-                        st.write(f"**{position['token0']['symbol']}:** {token0_amount}")
-                        
-                        # Display token1 info
-                        token1_amount = float(position['token1']['amount'])
-                        st.write(f"**{position['token1']['symbol']}:** {token1_amount}")
-                        
-                        # Display uncollected fees
-                        st.write("### Uncollected Fees")
-                        fees0 = float(position['token0']['uncollected_fees'])
-                        fees1 = float(position['token1']['uncollected_fees'])
-                        
-                        st.write(f"**{position['token0']['symbol']}:** {fees0}")
-                        st.write(f"**{position['token1']['symbol']}:** {fees1}")
-                        
-                        # Position range
-                        st.write("### Position Range")
-                        st.write(f"**Lower Tick:** {position['position']['tick_lower']}")
-                        st.write(f"**Upper Tick:** {position['position']['tick_upper']}")
-                        st.write(f"**Current Tick:** {position['pool']['current_tick']}")
-    else:
-        st.error("Unable to fetch Uniswap positions. Please check the API connection.") 
+        st.info("No position data available. Please check API connection.") 
