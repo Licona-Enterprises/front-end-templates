@@ -1,0 +1,36 @@
+[
+  {
+    "wallet_address": "0xb90839A51511042c69553AC4e60aa184449f5bc7",
+    "portfolio": "FDA_PORTOLFIO_3",
+    "strategy": "FDA_Lend_Polygon_1",
+    "tokens": [
+      {
+        "address": "0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE",
+        "symbol": "aPolDAI",
+        "name": "Aave Polygon DAI",
+        "decimals": 18,
+        "amount": "30.931883789435136854",
+        "raw_amount": "30931883789435136854",
+        "network": "polygon",
+        "token_id": "AAVE_ATOKEN_POLYGON_DAI"
+      }
+    ]
+  },
+  {
+    "wallet_address": "0x88F199ea919C6ac124d3B2407f9E2b4B700fa47D",
+    "portfolio": "FDA_PORTOLFIO_3",
+    "strategy": "FDA_SpecSpec_Arb",
+    "tokens": [
+      {
+        "address": "0x724dc807b04555b71ed48a6896b6F41593b8C637",
+        "symbol": "aArbUSDCn",
+        "name": "Aave Arbitrum USDCn",
+        "decimals": 6,
+        "amount": "30.92821",
+        "raw_amount": "30928210",
+        "network": "arbitrum",
+        "token_id": "AAVE_ATOKEN_ARBITRUM_USDC"
+      }
+    ]
+  }
+]

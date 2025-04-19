@@ -11,16 +11,16 @@ from fastapi import FastAPI, Query
 from typing import Optional, List, Dict, Any
 
 # Now import local modules
-from consts import DEFAULT_ASSETS, METRIC_FREQUENCIES
+from consts import DEFAULT_ASSETS, METRIC_FREQUENCIES, PORTFOLIOS
 from coinmetrics import CoinMetricsService
 from web3_uniswap_position_calculator import get_uniswap_wallet_addresses, process_positions
+from web3_aave_position_calculator import get_aave_wallet_addresses, get_wallet_aave_positions
 
 load_dotenv()
 
 app = FastAPI()
 
 # Initialize services
-# block_explorer_service = BlockExplorerService()
 coinmetrics_service = CoinMetricsService()
 
 @app.get("/api/market-data")
@@ -39,32 +39,6 @@ async def get_market_data(
         assets=assets
     )
     return data
-
-# New endpoints for block explorer API
-@app.get("/api/eth-balances")
-async def get_eth_balances(
-    chain: str = Query(default="arbitrum"),
-    addresses: List[str] = Query()
-):
-    """
-    Get ETH balances for multiple addresses.
-    """
-    if not addresses:
-        return {"error": "No addresses specified"}
-    
-    pass
-    # return await block_explorer_service.get_eth_balances_multi(chain, addresses)
-
-@app.get("/api/eth-balance/{address}")
-async def get_eth_balance(
-    address: str,
-    chain: str = Query(default="arbitrum")
-):
-    """
-    Get ETH balance for a single address.
-    """
-    pass
-    # return await block_explorer_service.get_eth_balance(chain, address)
 
 @app.get("/api/uniswap/positions")
 async def get_uniswap_positions(
@@ -127,3 +101,88 @@ async def get_uniswap_positions(
         
     except Exception as e:
         return {"error": f"Error retrieving Uniswap positions: {str(e)}"}
+
+@app.get("/api/aave/positions")
+async def get_aave_positions(
+    portfolio: Optional[str] = Query(default=None),
+    wallet_address: Optional[str] = Query(default=None),
+    aave_protocol_only: bool = Query(default=False)
+):
+    """
+    Get Aave token positions data for wallets.
+    
+    Args:
+        portfolio: Optional filter by portfolio name
+        wallet_address: Optional filter by specific wallet address
+        aave_protocol_only: If True, only return positions from wallets where Aave is listed as an active protocol
+    
+    Returns:
+        List of Aave token positions
+    """
+    try:
+        # Get wallet addresses with Aave tokens or with active Aave protocol
+        wallet_addresses = get_aave_wallet_addresses()
+        
+        if not wallet_addresses:
+            return {"error": "No wallets with Aave positions found"}
+        
+        # Filter by aave_protocol_only flag if specified
+        if aave_protocol_only:
+            wallet_addresses = [
+                w for w in wallet_addresses 
+                if any("aave" in protocols for protocols in [
+                    PORTFOLIOS.get(w["portfolio"], {})
+                    .get("STRATEGY_WALLETS", {})
+                    .get(w.get("strategy", ""), {})
+                    .get("active_protocols", [])
+                ])
+            ]
+            if not wallet_addresses:
+                return {"error": "No wallets with Aave as active protocol found"}
+        
+        # Filter wallets by portfolio if specified
+        if portfolio:
+            wallet_addresses = [w for w in wallet_addresses if w["portfolio"] == portfolio]
+            if not wallet_addresses:
+                return {"error": f"No wallets found in portfolio '{portfolio}'"}
+        
+        # Filter by specific wallet address if provided
+        if wallet_address:
+            wallet_addresses = [w for w in wallet_addresses if w["address"].lower() == wallet_address.lower()]
+            if not wallet_addresses:
+                return {"error": f"Wallet address '{wallet_address}' not found or has no Aave positions"}
+        
+        # Process all Aave positions across wallets
+        all_positions = []
+        for wallet_info in wallet_addresses:
+            position_data = get_wallet_aave_positions(wallet_info)
+            
+            # Only include positions with tokens
+            if position_data["tokens"]:
+                all_positions.append(position_data)
+        
+        return {
+            "count": len(all_positions),
+            "wallets": all_positions
+        }
+        
+    except Exception as e:
+        return {"error": f"Error retrieving Aave positions: {str(e)}"}
+
+@app.get("/api/aave/positions/protocol-only")
+async def get_aave_protocol_positions(
+    portfolio: Optional[str] = Query(default=None),
+    wallet_address: Optional[str] = Query(default=None)
+):
+    """
+    Get Aave token positions data only for wallets where Aave is listed as an active protocol.
+    
+    Args:
+        portfolio: Optional filter by portfolio name
+        wallet_address: Optional filter by specific wallet address
+    
+    Returns:
+        List of Aave token positions
+    """
+    # Reuse the existing endpoint with aave_protocol_only set to True
+    return await get_aave_positions(portfolio, wallet_address, aave_protocol_only=True)

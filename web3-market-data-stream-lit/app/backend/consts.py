@@ -36,7 +36,10 @@ BASE_URLS = {
 
 # All these fields are for on-chain data jobs
 RPCS = {
-    "arbitrum" : "https://arb-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",   
+    "arbitrum" : "https://arb-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",  
+    "polygon" : "https://polygon-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",
+    "optimism" : "https://optimism-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",
+    "base" : "https://base-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",
 }
 
 # TODO always update wallets 
@@ -59,22 +62,25 @@ PORTFOLIOS = {
 }
 
 TOKENS = {
-    "AAVE_ATOKEN_POLYGON_USDC": {
-        "address": "0xA4D94019934D8333Ef880ABFFbF2FDd611C762BD",
-        "decimals": 6
+    "AAVE": {
+        "AAVE_ATOKEN_POLYGON_USDC": {
+            "address": "0xA4D94019934D8333Ef880ABFFbF2FDd611C762BD",
+            "decimals": 6
+        },
+        "AAVE_ATOKEN_POLYGON_USDT": {
+            "address": "0x6ab707Aca953eDAeFBc4fD23bA73294241490620",
+            "decimals": 6
+        },
+        "AAVE_ATOKEN_POLYGON_DAI": {
+            "address": "0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE",
+            "decimals": 18
+        },
+        "AAVE_ATOKEN_ARBITRUM_USDC": {
+            "address": "0x724dc807b04555b71ed48a6896b6F41593b8C637",
+            "decimals": 6
+        }
     },
-    "AAVE_ATOKEN_POLYGON_USDT": {
-        "address": "0x6ab707Aca953eDAeFBc4fD23bA73294241490620",
-        "decimals": 6
-    },
-    "AAVE_ATOKEN_POLYGON_DAI": {
-        "address": "0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE",
-        "decimals": 18
-    },
-    "AAVE_ATOKEN_ARBITRUM_USDC": {
-        "address": "0x724dc807b04555b71ed48a6896b6F41593b8C637",
-        "decimals": 6
-    },
+
     "ARBITRUM_WETH": {
         "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
         "decimals": 18
