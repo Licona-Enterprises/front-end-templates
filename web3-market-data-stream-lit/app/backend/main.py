@@ -349,6 +349,7 @@ async def generate_excel_report(
                     
                     # Process all positions across all wallets directly
                     all_positions = []
+                    token_symbols = set()  # Collect unique token symbols
                     
                     for wallet_info in wallet_addresses:
                         print(f"Processing Uniswap wallet: {wallet_info['address']}")
@@ -361,6 +362,12 @@ async def generate_excel_report(
                                 position["portfolio"] = wallet_info["portfolio"]
                                 if "strategy" in wallet_info:
                                     position["strategy"] = wallet_info["strategy"]
+                                
+                                # Collect token symbols for price fetching
+                                if "token0" in position and "symbol" in position["token0"]:
+                                    token_symbols.add(position["token0"]["symbol"].upper())
+                                if "token1" in position and "symbol" in position["token1"]:
+                                    token_symbols.add(position["token1"]["symbol"].upper())
                         
                         # Only include valid positions (no errors)
                         valid_wallet_positions = [p for p in positions_data if "error" not in p]
@@ -372,6 +379,66 @@ async def generate_excel_report(
                     debug_info["uniswap_count"] = positions_count
                     
                     print(f"FOUND {positions_count} UNISWAP POSITIONS DIRECTLY")
+                    print(f"FOUND {len(token_symbols)} UNIQUE TOKEN SYMBOLS: {sorted(list(token_symbols))}")
+                    
+                    # Get token prices now that we know all the symbols
+                    token_prices = {}
+                    if token_symbols:
+                        try:
+                            # Use the CoinMetricsService directly
+                            from coinmetrics import CoinMetricsService
+                            coinmetrics = CoinMetricsService()
+                            
+                            print(f"Fetching prices for tokens: {sorted(list(token_symbols))}")
+                            token_prices = coinmetrics.fetch_token_prices_sync(list(token_symbols))
+                            print(f"Successfully fetched prices: {token_prices}")
+                        except Exception as price_e:
+                            print(f"Error fetching token prices: {price_e}")
+                    
+                    # Now calculate USD values for each position
+                    for position in positions:
+                        try:
+                            token0_symbol = position['token0']['symbol'].upper()
+                            token1_symbol = position['token1']['symbol'].upper()
+                            token0_amount = float(position['token0']['amount'])
+                            token1_amount = float(position['token1']['amount'])
+                            
+                            # Get token prices (default to 0 if not available)
+                            # Handle common token symbol mismatches
+                            token0_price = 0
+                            token1_price = 0
+                            
+                            # Try direct symbol match first
+                            if token0_symbol in token_prices:
+                                token0_price = token_prices[token0_symbol]
+                            # Try special cases for wrapped tokens (WETH -> ETH, etc.)
+                            elif token0_symbol.startswith('W') and token0_symbol[1:] in token_prices:
+                                token0_price = token_prices[token0_symbol[1:]]
+                            
+                            # Same for token1
+                            if token1_symbol in token_prices:
+                                token1_price = token_prices[token1_symbol]
+                            elif token1_symbol.startswith('W') and token1_symbol[1:] in token_prices:
+                                token1_price = token_prices[token1_symbol[1:]]
+                            
+                            # Log for debugging
+                            print(f"Position {position.get('token_id', 'unknown')}: Token0: {token0_symbol}, Price: {token0_price}")
+                            print(f"Position {position.get('token_id', 'unknown')}: Token1: {token1_symbol}, Price: {token1_price}")
+                            
+                            # Calculate USD values
+                            token0_value_usd = token0_amount * token0_price
+                            token1_value_usd = token1_amount * token1_price
+                            total_value_usd = token0_value_usd + token1_value_usd
+                            
+                            # Add to position data
+                            position['token0_value_usd'] = token0_value_usd
+                            position['token1_value_usd'] = token1_value_usd
+                            position['total_value_usd'] = total_value_usd
+                        except Exception as price_e:
+                            print(f"Error calculating USD values for position {position.get('token_id', 'unknown')}: {price_e}")
+                            position['token0_value_usd'] = 0
+                            position['token1_value_usd'] = 0
+                            position['total_value_usd'] = 0
                     
                     # Dump first position for debugging
                     if positions_count > 0:
@@ -380,6 +447,7 @@ async def generate_excel_report(
                         pos_id = first_pos.get("token_id", "unknown")
                         print(f"FIRST POSITION ID: {pos_id}")
                         print(f"SAMPLE POSITION KEYS: {list(first_pos.keys())}")
+                        print(f"POSITION HAS TOKEN0 VALUE USD: {first_pos.get('token0_value_usd', 'N/A')}")
                         
                         # Direct and simple approach - just add all fields to Excel
                         excel_positions = []
@@ -387,14 +455,50 @@ async def generate_excel_report(
                         for pos in positions:
                             # Create row with all available fields to debug
                             row = {}
-                            for key, value in pos.items():
-                                if isinstance(value, (str, int, float, bool)) or value is None:
-                                    row[key] = value
-                                elif isinstance(value, dict):
-                                    # Flatten one level for nested objects like token0, token1
-                                    for sub_key, sub_value in value.items():
-                                        if isinstance(sub_value, (str, int, float, bool)) or sub_value is None:
-                                            row[f"{key}_{sub_key}"] = sub_value
+                            
+                            # Add basic position information
+                            row["Position ID"] = pos.get("token_id", "")
+                            row["Portfolio"] = pos.get("portfolio", "")
+                            row["Strategy"] = pos.get("strategy", "")
+                            row["Wallet Address"] = pos.get("wallet_address", "")
+                            
+                            # Add token information
+                            if "token0" in pos and "token1" in pos:
+                                row["Token0 Symbol"] = pos["token0"].get("symbol", "")
+                                row["Token1 Symbol"] = pos["token1"].get("symbol", "")
+                                row["Token0 Amount"] = float(pos["token0"].get("amount", 0))
+                                row["Token1 Amount"] = float(pos["token1"].get("amount", 0))
+                                row["Token Pair"] = f"{row['Token0 Symbol']}-{row['Token1 Symbol']}"
+                            
+                            # Add USD values
+                            row["Token0 Value USD"] = pos.get("token0_value_usd", 0)
+                            row["Token1 Value USD"] = pos.get("token1_value_usd", 0)
+                            row["Total Value USD"] = pos.get("total_value_usd", 0)
+                            
+                            # Add position status
+                            if "position" in pos:
+                                liquidity = int(pos["position"].get("liquidity", 0))
+                                row["Status"] = "Active" if liquidity > 0 else "Closed"
+                                
+                                # Add price status for active positions
+                                if liquidity > 0 and "pool" in pos:
+                                    current_tick = pos["pool"].get("current_tick", 0)
+                                    tick_lower = pos["position"].get("tick_lower", 0)
+                                    tick_upper = pos["position"].get("tick_upper", 0)
+                                    
+                                    if tick_lower <= current_tick <= tick_upper:
+                                        row["Price Status"] = "In Range"
+                                    elif current_tick < tick_lower:
+                                        row["Price Status"] = "Below Range"
+                                    else:
+                                        row["Price Status"] = "Above Range"
+                                else:
+                                    row["Price Status"] = "N/A"
+                            
+                            # Add pool information
+                            if "pool" in pos:
+                                row["Fee Tier"] = f"{pos['pool'].get('fee', 0)}%"
+                            
                             excel_positions.append(row)
                         
                         # Create DataFrame and add to Excel
@@ -406,12 +510,58 @@ async def generate_excel_report(
                         uniswap_df.to_excel(writer, sheet_name="Uniswap Positions", index=False)
                         print("✅ UNISWAP POSITIONS ADDED TO EXCEL REPORT!")
                         
-                        # Auto-adjust column widths
+                        # Get the workbook and worksheet
+                        workbook = writer.book
                         worksheet = writer.sheets["Uniswap Positions"]
+                        
+                        # Define number formats
+                        usd_format = workbook.add_format({'num_format': '$#,##0.00'})
+                        token_format = workbook.add_format({'num_format': '0.000000'})
+                        percent_format = workbook.add_format({'num_format': '0.00%'})
+                        
+                        # Auto-adjust column widths and apply formatting
                         for idx, col in enumerate(uniswap_df.columns):
-                            # Ensure column width is adequate
-                            max_len = max(uniswap_df[col].astype(str).map(len).max(), len(col)) + 2
-                            worksheet.set_column(idx, idx, max_len)
+                            # Get column letter
+                            col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
+                            
+                            # Apply formats based on column content
+                            if 'USD' in col:
+                                worksheet.set_column(f'{col_letter}:{col_letter}', 15, usd_format)
+                            elif 'Amount' in col:
+                                worksheet.set_column(f'{col_letter}:{col_letter}', 15, token_format)
+                            elif 'Fee' in col and 'Tier' in col:
+                                # Skip fee tier as it's already formatted as a string with %
+                                worksheet.set_column(f'{col_letter}:{col_letter}', 10)
+                            else:
+                                # Ensure column width is adequate for other columns
+                                max_len = max(uniswap_df[col].astype(str).map(len).max(), len(col)) + 2
+                                worksheet.set_column(f'{col_letter}:{col_letter}', max_len)
+                        
+                        # Add a total row at the bottom
+                        if 'Total Value USD' in uniswap_df.columns:
+                            total_row_idx = len(uniswap_df) + 1  # +1 for header row
+                            total_col = list(uniswap_df.columns).index('Total Value USD')
+                            total_col_letter = chr(65 + total_col) if total_col < 26 else chr(64 + total_col // 26) + chr(65 + total_col % 26)
+                            
+                            # Add a total label
+                            worksheet.write(total_row_idx, 0, 'TOTAL')
+                            
+                            # Add the sum formula with USD formatting
+                            total_formula = f'=SUM({total_col_letter}2:{total_col_letter}{total_row_idx})'
+                            worksheet.write_formula(total_row_idx, total_col, total_formula, usd_format)
+                            
+                            # Also total the token values
+                            if 'Token0 Value USD' in uniswap_df.columns:
+                                token0_col = list(uniswap_df.columns).index('Token0 Value USD')
+                                token0_col_letter = chr(65 + token0_col) if token0_col < 26 else chr(64 + token0_col // 26) + chr(65 + token0_col % 26)
+                                token0_formula = f'=SUM({token0_col_letter}2:{token0_col_letter}{total_row_idx})'
+                                worksheet.write_formula(total_row_idx, token0_col, token0_formula, usd_format)
+                            
+                            if 'Token1 Value USD' in uniswap_df.columns:
+                                token1_col = list(uniswap_df.columns).index('Token1 Value USD')
+                                token1_col_letter = chr(65 + token1_col) if token1_col < 26 else chr(64 + token1_col // 26) + chr(65 + token1_col % 26)
+                                token1_formula = f'=SUM({token1_col_letter}2:{token1_col_letter}{total_row_idx})'
+                                worksheet.write_formula(total_row_idx, token1_col, token1_formula, usd_format)
                     else:
                         print("⚠️ NO POSITIONS FOUND")
                         # Add an empty Uniswap sheet
