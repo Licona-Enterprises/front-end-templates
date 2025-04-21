@@ -42,6 +42,9 @@ def get_aave_wallet_addresses() -> List[Dict[str, Any]]:
                     networks = []
                     if "active_networks" in strategy_data and strategy_data["active_networks"]:
                         networks = strategy_data["active_networks"]
+                    else:
+                        print(f"Warning: No active networks defined for strategy {strategy_name} in portfolio {portfolio_name}")
+                        continue  # Skip this strategy/wallet
                     
                     wallet_info = {
                         "address": strategy_data["address"],
@@ -50,16 +53,6 @@ def get_aave_wallet_addresses() -> List[Dict[str, Any]]:
                         "networks": networks
                     }
                     print(f"Found Aave wallet: {strategy_data['address']} in portfolio {portfolio_name}, networks: {networks}")
-                    wallet_addresses.append(wallet_info)
-                # For this demo, also check any wallets on Arbitrum for Aave tokens
-                elif "active_networks" in strategy_data and "arbitrum" in strategy_data["active_networks"]:
-                    wallet_info = {
-                        "address": strategy_data["address"],
-                        "portfolio": portfolio_name,
-                        "strategy": strategy_name,
-                        "networks": ["arbitrum"]  # Only check Arbitrum network
-                    }
-                    print(f"Found Arbitrum wallet to check: {strategy_data['address']} in portfolio {portfolio_name}")
                     wallet_addresses.append(wallet_info)
     
     if not wallet_addresses:

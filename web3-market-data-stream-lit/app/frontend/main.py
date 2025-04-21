@@ -4,6 +4,18 @@ import pandas as pd
 from datetime import datetime
 import sys
 import os
+import requests
+from io import BytesIO
+
+# Initialize session state for refresh tracking and previous values
+if 'last_refresh' not in st.session_state:
+    st.session_state.last_refresh = time.time()
+    st.session_state.refresh_count = 0
+    st.session_state.previous_prices = {}
+    st.session_state.eth_price = 0
+    st.session_state.global_download_clicked = False
+    st.session_state.tab_change_enabled = True
+    st.session_state._current_tab = 0
 
 # Direct import using explicit file path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -14,6 +26,7 @@ AUTO_REFRESH_INTERVAL = consts.AUTO_REFRESH_INTERVAL
 
 from portfolio import render_portfolio_page  # Import the portfolio module
 from uniswap import render_uniswap_page  # Import the uniswap module
+from aave import render_aave_page  # Import the aave module
 from api_service import ApiService  # Import the API service
 
 # Initialize API service
@@ -61,16 +74,104 @@ st.markdown("""
         color: #ff4444;
         font-weight: bold;
     }
+    .header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+    .header-title {
+        margin: 0;
+    }
+    .download-button {
+        padding: 0.5rem 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("Quant Dashboard")
+# Function to download the Excel report with all data
+def get_excel_report():
+    """Download Excel report with Uniswap data"""
+    try:
+        # Get the API base URL
+        api_base_url = api_service.api_base_url
+        
+        # Simple direct URL
+        download_url = f"{api_base_url}/api/report/positions-excel?include_uniswap=true"
+        
+        st.write("Requesting Excel report with Uniswap data...")
+        print(f"REQUESTING EXCEL REPORT FROM: {download_url}")
+        
+        # Make the request
+        response = requests.get(download_url)
+        
+        # Check response
+        if response.status_code == 200:
+            content_size = len(response.content)
+            print(f"SUCCESS! Got Excel file: {content_size} bytes")
+            return response.content, None
+        else:
+            error_msg = f"Error: {response.status_code} - {response.text}"
+            print(f"API ERROR: {error_msg}")
+            return None, error_msg
+            
+    except Exception as e:
+        error_msg = f"Exception: {str(e)}"
+        print(f"EXCEPTION: {error_msg}")
+        return None, error_msg
 
-# Initialize session state for refresh tracking and previous values
-if 'last_refresh' not in st.session_state:
-    st.session_state.last_refresh = time.time()
-    st.session_state.refresh_count = 0
-    st.session_state.previous_prices = {}
+# Create header with report download button
+header_col1, header_col2 = st.columns([3, 1])
+
+with header_col1:
+    st.title("Quant Dashboard")
+
+with header_col2:
+    # Create a download button placeholder
+    download_placeholder = st.empty()
+    
+    # Check if we're in a download state
+    if 'global_download_clicked' in st.session_state and st.session_state.global_download_clicked:
+        with st.spinner("Downloading Excel report..."):
+            # Clear status placeholder
+            status = st.empty()
+            status.info("Requesting Excel report with Uniswap data...")
+            
+            # Get the report
+            excel_data, error = get_excel_report()
+            
+            if excel_data:
+                # Show success and download button
+                status.success("Excel report ready!")
+                
+                download_placeholder.download_button(
+                    label="📥 Download Excel Report",
+                    data=excel_data,
+                    file_name="positions_report.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="global_download_excel_file",
+                    on_click=lambda: setattr(st.session_state, 'global_download_clicked', False)
+                )
+            else:
+                # Show error
+                status.error(f"Failed to get report: {error}")
+                
+                # Reset download state
+                st.session_state.global_download_clicked = False
+                
+                # Show retry button
+                download_placeholder.button(
+                    "Try Again", 
+                    key="global_excel_button_reset",
+                    on_click=lambda: setattr(st.session_state, 'global_download_clicked', True)
+                )
+    else:
+        # Show the initial download button
+        download_placeholder.button(
+            "📊 Download Excel Report with Uniswap Data", 
+            key="global_excel_button",
+            on_click=lambda: setattr(st.session_state, 'global_download_clicked', True)
+        )
 
 # Define assets we want to track - use constants
 ASSETS = DEFAULT_ASSETS
@@ -100,7 +201,7 @@ def fetch_market_data():
     return market_data
 
 # Create tabs for different sections
-tab1, tab2, tab3 = st.tabs(["Market Data", "Portfolio Balances", "Uniswap Positions"])
+tab1, tab2, tab3, tab4 = st.tabs(["Market Data", "Portfolio Balances", "Uniswap Positions", "AAVE Positions"])
 
 with tab1:
     # Create columns for header area
@@ -360,6 +461,10 @@ with tab2:
 with tab3:
     # Render uniswap page from imported module
     render_uniswap_page(api_service)
+
+with tab4:
+    # Render aave page from imported module
+    render_aave_page(api_service)
 
 # Store the current tab for refresh logic
 if "tab_change_enabled" not in st.session_state:

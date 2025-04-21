@@ -433,3 +433,4 @@ def render_uniswap_page(api_service):
                     st.rerun()
     else:
         st.info("No position data available. Please check API connection.") 
+        

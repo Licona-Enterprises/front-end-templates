@@ -38,8 +38,11 @@ def render_portfolio_page(api_service):
     # Fetch button
     if st.button("Fetch Portfolio Balances"):
         with st.spinner("Fetching balances..."):
+            # Add a network selection
+            network = "arbitrum"  # Default to arbitrum for now, but this could be a dropdown
+            
             # Use the API service to fetch ETH balances
-            balances_data = api_service.fetch_eth_balances(st.session_state.addresses)
+            balances_data = api_service.fetch_eth_balances(st.session_state.addresses, chain=network)
             
             if balances_data and balances_data.get('status') == 'success' and 'data' in balances_data:
                 # Create DataFrame from balance data

@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Dict, List, Tuple, Any, Optional, Union, Generator, Iterator, ContextManager, TypeVar
 
 # Import ABIs directly from the Python module
-from contract_abis.uniswapv3_position_calculator_minimal_abis import (
+from app.backend.contract_abis.uniswapv3_position_calculator_minimal_abis import (
     UNISWAP_V3_POOL_ABI,
     UNISWAP_V3_FACTORY_ABI,
     ERC20_ABI,
@@ -15,7 +15,7 @@ from contract_abis.uniswapv3_position_calculator_minimal_abis import (
 )
 
 # Import PORTFOLIOS to get wallet addresses with uniswap active protocol
-from consts import PORTFOLIOS, UNISWAP_V3_FACTORY_ADDRESS, UNISWAP_V3_POSITIONS_NFT_IDS, RPCS
+from app.backend.consts import PORTFOLIOS, UNISWAP_V3_FACTORY_ADDRESS, UNISWAP_V3_POSITIONS_NFT_IDS, RPCS
 
 # Dictionary to store web3 instances for different networks
 web3_instances = {}
@@ -38,59 +38,67 @@ def get_web3_instance(network: str) -> Web3:
     else:
         raise ValueError(f"No RPC URL configured for network: {network}")
 
-def get_uniswap_wallet_addresses() -> List[Dict[str, Any]]:
-    """Get wallet addresses from PORTFOLIOS for Uniswap processing"""
+def get_uniswap_wallet_addresses():
+    """
+    Get wallet addresses with Uniswap V3 positions from the PORTFOLIOS configuration.
+    
+    Returns:
+        List of wallet info dictionaries with addresses and position NFT IDs
+    """
     wallet_addresses = []
     
+    print("Searching for Uniswap wallets in PORTFOLIOS config...")
+    print(f"Available portfolios: {list(PORTFOLIOS.keys())}")
+    
+    # Iterate through portfolios and strategies
     for portfolio_name, portfolio_data in PORTFOLIOS.items():
-        # Check if portfolio has STRATEGY_WALLETS
-        if "STRATEGY_WALLETS" in portfolio_data:
-            for strategy_name, strategy_data in portfolio_data["STRATEGY_WALLETS"].items():
-                if "active_protocols" in strategy_data and "uniswap" in strategy_data["active_protocols"]:
-                    nft_ids = []
-                    # Check for uniswapv3_positions_nft_ids in strategy data
-                    if "uniswapv3_positions_nft_ids" in strategy_data:
-                        nft_ids = strategy_data["uniswapv3_positions_nft_ids"]
-                    
-                    # Get the active network for this strategy
-                    network = "arbitrum"  # Default to arbitrum if not specified
-                    if "active_networks" in strategy_data and strategy_data["active_networks"]:
-                        network = strategy_data["active_networks"][0]  # Use the first network in the list
-                    
+        # Get strategy wallets
+        strategy_wallets = portfolio_data.get("STRATEGY_WALLETS", {})
+        
+        print(f"Portfolio {portfolio_name} has {len(strategy_wallets)} strategy wallets")
+        
+        for strategy_name, strategy_data in strategy_wallets.items():
+            # Check if this wallet has Uniswap as an active protocol
+            active_protocols = strategy_data.get("active_protocols", [])
+            
+            print(f"  Strategy {strategy_name} has active protocols: {active_protocols}")
+            
+            if "uniswap" in [p.lower() for p in active_protocols]:
+                # Get the wallet address
+                wallet_address = strategy_data.get("address", "")
+                
+                # Check if this wallet has Uniswap V3 positions NFT IDs
+                nft_ids = strategy_data.get("uniswapv3_positions_nft_ids", [])
+                
+                # Get the active network for this strategy
+                active_networks = strategy_data.get("active_networks", [])
+                if not active_networks:
+                    print(f"  Warning: No active networks for strategy {strategy_name}")
+                    continue
+                
+                network = active_networks[0]  # Use the first network
+                
+                print(f"  Strategy {strategy_name} has Uniswap NFT IDs: {nft_ids} on network {network}")
+                
+                # Only include wallets with both an address and NFT IDs
+                if wallet_address and nft_ids:
+                    # Create wallet info
                     wallet_info = {
-                        "address": strategy_data["address"],
-                        "nft_ids": nft_ids,
+                        "address": wallet_address,
                         "portfolio": portfolio_name,
                         "strategy": strategy_name,
+                        "nft_ids": nft_ids,
                         "network": network
                     }
+                    
                     wallet_addresses.append(wallet_info)
-        # Support for legacy format where wallets are directly in portfolio data
-        elif "active_protocols" in portfolio_data and "uniswap" in portfolio_data["active_protocols"]:
-            for wallet_address in portfolio_data["wallets"]:
-                nft_ids = []
-                
-                # Check for uniswapv3_positions_nft_ids in portfolio data
-                if "uniswapv3_positions_nft_ids" in portfolio_data:
-                    nft_ids = portfolio_data["uniswapv3_positions_nft_ids"]
-                
-                # Get the active network for this portfolio
-                network = "arbitrum"  # Default to arbitrum if not specified
-                if "active_networks" in portfolio_data and portfolio_data["active_networks"]:
-                    network = portfolio_data["active_networks"][0]  # Use the first network in the list
-                
-                wallet_info = {
-                    "address": wallet_address,
-                    "nft_ids": nft_ids,
-                    "portfolio": portfolio_name,
-                    "network": network
-                }
-                wallet_addresses.append(wallet_info)
+                    print(f"  Added wallet {wallet_address} to results with network {network}")
     
+    print(f"Found {len(wallet_addresses)} wallets with Uniswap positions")
     return wallet_addresses
 
 @contextlib.contextmanager
-def web3_contract(address: str, abi: List[Dict], network: str = "arbitrum") -> Generator[Any, None, None]:
+def web3_contract(address: str, abi: List[Dict], network: str) -> Generator[Any, None, None]:
     """Context manager for web3 contract interactions"""
     try:
         web3 = get_web3_instance(network)
@@ -103,7 +111,7 @@ def web3_contract(address: str, abi: List[Dict], network: str = "arbitrum") -> G
         # Any cleanup if needed in the future
         pass
 
-def get_token_info(token_address: str, network: str = "arbitrum") -> Dict[str, Union[str, int]]:
+def get_token_info(token_address: str, network: str) -> Dict[str, Union[str, int]]:
     """Get token name, symbol and decimals"""
     try:
         with web3_contract(token_address, ERC20_ABI, network) as token_contract:
@@ -159,7 +167,7 @@ def format_with_decimals(value: Decimal, decimals: int) -> str:
         formatted = formatted.rstrip('0').rstrip('.') if '.' in formatted else formatted
     return formatted
 
-def calculate_position_details(token_id: int, position_manager_address: str, network: str = "arbitrum") -> Dict[str, Any]:
+def calculate_position_details(token_id: int, position_manager_address: str, network: str) -> Dict[str, Any]:
     """Calculate full details of a Uniswap V3 position"""
     try:
         # Use context managers for contract interactions
@@ -260,7 +268,7 @@ def format_decimal_str(decimal_str: str, token_symbol: str, token_decimals: int)
     # Fallback
     return decimal_str
 
-def get_token_ids(wallet_address: str, nft_manager_address: str, network: str = "arbitrum") -> Generator[int, None, None]:
+def get_token_ids(wallet_address: str, nft_manager_address: str, network: str) -> Generator[int, None, None]:
     """Generator that yields token IDs owned by the given wallet"""
     with web3_contract(nft_manager_address, ERC721_ABI, network) as erc721_contract:
         balance = erc721_contract.functions.balanceOf(wallet_address).call()
@@ -275,7 +283,7 @@ def get_token_ids(wallet_address: str, nft_manager_address: str, network: str = 
 def process_positions(wallet_info: Dict[str, Any]) -> Generator[Dict[str, Any], None, None]:
     """Generator that processes positions and yields position details"""
     wallet_address = wallet_info["address"]
-    network = wallet_info.get("network", "arbitrum")
+    network = wallet_info["network"]
     
     for nft_id in wallet_info["nft_ids"]:
         if nft_id in UNISWAP_V3_POSITIONS_NFT_IDS:

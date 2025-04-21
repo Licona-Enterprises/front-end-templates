@@ -55,7 +55,7 @@ class ApiService:
         # Return combined data
         return {"data": all_data, "asset_statuses": asset_statuses}
         
-    def fetch_eth_balance(self, address, chain="arbitrum"):
+    def fetch_eth_balance(self, address, chain):
         """Fetch ETH balance for a single address."""
         try:
             response = requests.get(
@@ -67,7 +67,7 @@ class ApiService:
             st.error(f"Error fetching ETH balance for {address}: {e}")
             return None
             
-    def fetch_eth_balances(self, addresses, chain="arbitrum"):
+    def fetch_eth_balances(self, addresses, chain):
         """Fetch ETH balances for multiple addresses."""
         try:
             response = requests.get(

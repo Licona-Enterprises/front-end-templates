@@ -36,6 +36,7 @@ mdurl==0.1.2
 multidict==6.4.3
 narwhals==1.35.0
 numpy==1.26.4
+openpyxl==3.1.2
 packaging==23.2
 pandas==2.2.1
 parsimonious==0.10.0
@@ -75,5 +76,6 @@ tzdata==2025.2
 urllib3==2.4.0
 uvicorn==0.27.1
 web3==7.10.0
-websockets==15.0.1
+websockets==15.0.0
+xlsxwriter==3.2.3
 yarl==1.19.0
