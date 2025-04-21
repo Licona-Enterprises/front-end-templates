@@ -36,23 +36,23 @@ BASE_URLS = {
 
 # All these fields are for on-chain data jobs
 RPCS = {
-    "arbitrum" : "https://arb-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",  
-    "polygon" : "https://polygon-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",
-    "optimism" : "https://optimism-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",
-    "base" : "https://base-mainnet.g.alchemy.com/v2/DaboUGjPdJKw2UY-R1TUCrZhV-q30azQ",
+    "arbitrum" : "https://arb-mainnet.g.alchemy.com/v2/",  
+    "polygon" : "https://polygon-mainnet.g.alchemy.com/v2/",
+    "optimism" : "https://optimism-mainnet.g.alchemy.com/v2/",
+    "base" : "https://base-mainnet.g.alchemy.com/v2/",
 }
 
 # TODO always update wallets 
 PORTFOLIOS = {
-    "FDA_PORTOLFIO_3" : {
+    "PORTFOLIO_NAME" : {
         "STRATEGY_WALLETS":{
-            "FDA_Lend_Polygon_1": {
-                "address": "0xb90839A51511042c69553AC4e60aa184449f5bc7",
+            "STRAT_1": {
+                "address": "0X_WALLET_ADDRESS",
                 "active_protocols": ["aave"],
                 "active_networks": ["polygon"]
             },
-            "FDA_SpecSpec_Arb": {
-                "address": "0x88F199ea919C6ac124d3B2407f9E2b4B700fa47D",
+            "STRAT_2": {
+                "address": "0X_WALLET_ADDRESS",
                 "active_protocols": ["uniswap"],
                 "active_networks": ["arbitrum"],
                 "uniswapv3_positions_nft_ids": ["ARBITRUM_UNISWAP_V3_POSITIONS_NFT_V1"]
@@ -90,7 +90,6 @@ TOKENS = {
         "decimals": 8
     },
 }
-
 
 UNISWAP_V3_FACTORY_ADDRESS = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
 
