@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Color Palette - Simplified */
+    --primary: 220 10% 12%; /* Deep Charcoal #1B1F23 */
+    --primary-foreground: 224 100% 62%; /* Electric Blue #3E8EFF */
+
+    --background: 0 0% 5%; /* Jet Black #0E0E0E */
+    --foreground: 0 0% 88%; /* Fog White #E0E0E0 */
+
+    --card: 220 10% 16%; /* Dark Graphite #23272F */
+    --card-foreground: 0 0% 88%; /* Fog White #E0E0E0 */
+
+    --popover: 220 10% 16%; /* Dark Graphite #23272F */
+    --popover-foreground: 0 0% 88%; /* Fog White #E0E0E0 */
+
+    --secondary: 220 10% 16%; /* Dark Graphite #23272F */
+    --secondary-foreground: 0 0% 88%; /* Fog White #E0E0E0 */
+
+    --muted: 220 10% 16%; /* Dark Graphite #23272F */
+    --muted-foreground: 0 0% 88%; /* Fog White #E0E0E0 with 70% opacity */
+
+    --accent: 224 100% 62%; /* Electric Blue #3E8EFF */
+    --accent-foreground: 0 0% 88%; /* Fog White #E0E0E0 */
+
+    --destructive: 0 85% 60%; /* Signal Red #F44336 */
+    --destructive-foreground: 0 0% 88%; /* Fog White #E0E0E0 */
+
+    --success: 142 76% 50%; /* Neon Green #1CE783 */
+    --success-foreground: 0 0% 88%; /* Fog White #E0E0E0 */
+
+    --warning: 37 100% 67%; /* Amber Gold #FFC857 */
+    --warning-foreground: 0 0% 88%; /* Fog White #E0E0E0 */
+
+    --border: 220 10% 20%; /* Slightly lighter than Dark Graphite */
+    --input: 220 10% 20%; /* Slightly lighter than Dark Graphite */
+    --ring: 224 100% 62%; /* Electric Blue #3E8EFF */
+
+    --radius: 0.75rem; /* Reduced from 1rem */
+
+    /* Chart colors */
+    --chart-1: 224 100% 62%; /* Electric Blue #3E8EFF */
+    --chart-2: 142 76% 50%; /* Neon Green #1CE783 */
+    --chart-3: 37 100% 67%; /* Amber Gold #FFC857 */
+    --chart-4: 0 85% 60%; /* Signal Red #F44336 */
+    --chart-5: 262 83% 58%; /* Purple */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-inter;
+    font-feature-settings: "liga" 1, "calt" 1;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-semibold leading-tight;
+  }
+  p {
+    @apply leading-relaxed;
+  }
+}
+
+@layer components {
+  /* Simplified component styles */
+  .section-header {
+    @apply text-gray-400 uppercase text-xs tracking-wider font-medium mb-3;
+  }
+
+  .metric-card {
+    @apply rounded-lg bg-card shadow-sm border border-gray-800 p-5 transition-all duration-300;
+  }
+
+  .metric-value {
+    @apply text-2xl font-semibold text-white;
+  }
+
+  .metric-label {
+    @apply text-sm text-gray-400;
+  }
+
+  .agent-card {
+    @apply rounded-lg bg-card shadow-sm border border-gray-800 p-5 transition-all duration-300;
+  }
+
+  .status-dot {
+    @apply h-2 w-2 rounded-full;
+  }
+
+  .status-dot-active {
+    @apply bg-success animate-pulse;
+  }
+
+  .status-dot-paused {
+    @apply bg-warning;
+  }
+
+  .status-dot-error {
+    @apply bg-destructive;
+  }
+}
+
+/* Import Inter font */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+.font-inter {
+  font-family: "Inter", sans-serif;
+}
+
+/* Simplified button styling */
+.btn {
+  @apply rounded-lg px-4 py-2 transition-all duration-300;
+}
+
+.btn-primary {
+  @apply bg-accent text-white hover:bg-blue-600;
+}
+
+.btn-secondary {
+  @apply bg-transparent border border-gray-700 text-white hover:bg-gray-800;
+}
+
+/* Simplified card styling */
+.card {
+  @apply rounded-lg bg-card shadow-sm border border-gray-800 p-5;
+}
+
+/* Animation utilities */
+.hover-scale {
+  @apply transition-transform duration-300 hover:scale-105;
+}
+
+.hover-glow {
+  @apply transition-all duration-300 hover:ring-1 hover:ring-blue-400;
+}
