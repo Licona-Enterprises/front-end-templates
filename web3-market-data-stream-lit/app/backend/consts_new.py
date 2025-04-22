@@ -25,7 +25,7 @@ METRIC_FREQUENCIES = {
 }
 
 # UI settings 
-AUTO_REFRESH_INTERVAL = 60  # seconds 
+AUTO_REFRESH_INTERVAL = 5  # seconds 
 
 BASE_URLS = {
     "polygon": "https://api.polygonscan.com/api",

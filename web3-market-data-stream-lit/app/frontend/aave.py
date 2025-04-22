@@ -5,6 +5,7 @@ import os
 import json
 import requests
 from io import BytesIO
+import time
 
 # Direct import using explicit file path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -20,78 +21,14 @@ def render_aave_page(api_service):
     """
     st.subheader("AAVE Lending Positions")
     
-    # Create filter options and add download report button in the same row
-    col1, col2, col3 = st.columns([2, 2, 1])
+    # Create filter options
+    col1, col2 = st.columns(2)
     
     with col1:
         portfolio_filter = st.text_input("Filter by Portfolio", key="aave_portfolio_filter")
     
     with col2:
         strategy_filter = st.text_input("Filter by Strategy", key="aave_strategy_filter")
-    
-    with col3:
-        st.write("")  # Add some space
-        st.write("")  # Add some space
-        
-        # Function to download the Excel report
-        def get_excel_report():
-            # Construct query parameters
-            params = {}
-            if portfolio_filter:
-                params['portfolio'] = portfolio_filter
-                
-            # Get the API base URL from the API service
-            api_base_url = api_service.api_base_url
-            
-            # Create the download URL
-            download_url = f"{api_base_url}/api/report/positions-excel"
-            
-            try:
-                # Make a GET request to the API endpoint
-                response = requests.get(download_url, params=params)
-                
-                # Check if the request was successful
-                if response.status_code == 200:
-                    # Return the content
-                    return response.content
-                else:
-                    st.error(f"Error downloading report: {response.status_code} - {response.text}")
-                    return None
-            except Exception as e:
-                st.error(f"Exception during download: {str(e)}")
-                return None
-        
-        # Create a single download button
-        excel_placeholder = st.empty()
-        
-        # First check if we're in a download state
-        if 'download_clicked' in st.session_state and st.session_state.download_clicked:
-            with st.spinner("Generating Excel report..."):
-                excel_data = get_excel_report()
-                if excel_data:
-                    excel_placeholder.download_button(
-                        label="📥 Download Excel Report",
-                        data=excel_data,
-                        file_name="positions_report.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key="download_excel_file",
-                        on_click=lambda: setattr(st.session_state, 'download_clicked', False)
-                    )
-                else:
-                    # Reset the download state if there was an error
-                    st.session_state.download_clicked = False
-                    excel_placeholder.button(
-                        "📊 Download Excel Report", 
-                        key="excel_button_reset",
-                        on_click=lambda: setattr(st.session_state, 'download_clicked', True)
-                    )
-        else:
-            # Show the initial download button
-            excel_placeholder.button(
-                "📊 Download Excel Report", 
-                key="excel_button",
-                on_click=lambda: setattr(st.session_state, 'download_clicked', True)
-            )
     
     # Function to fetch token prices using CoinMetricsService
     def fetch_token_prices(token_symbols):

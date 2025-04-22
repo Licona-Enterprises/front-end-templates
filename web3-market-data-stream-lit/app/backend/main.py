@@ -7,6 +7,7 @@ from fastapi import FastAPI, Query, Response
 from fastapi.responses import StreamingResponse
 from typing import Optional, List, Dict, Any
 import json
+from datetime import datetime
 
 # Fix import paths by adding the current directory to the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -290,25 +291,40 @@ async def generate_excel_report(
                     if all_positions:
                         # Process AAVE data into a flat format for Excel
                         aave_rows = []
+                        # Get current timestamp for all records
+                        current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        
                         for wallet in all_positions:
                             wallet_address = wallet.get("wallet_address", "")
                             portfolio_name = wallet.get("portfolio", "")
                             strategy = wallet.get("strategy", "")
                             
                             for token in wallet.get("tokens", []):
-                                aave_rows.append({
-                                    "Wallet Address": wallet_address,
-                                    "Portfolio": portfolio_name,
-                                    "Strategy": strategy,
-                                    "Token Symbol": token.get("symbol", ""),
-                                    "Token Name": token.get("name", ""),
-                                    "Token Address": token.get("address", ""),
-                                    "Amount": token.get("amount", 0),
-                                    "Raw Amount": token.get("raw_amount", 0),
-                                    "Decimals": token.get("decimals", 0),
-                                    "Network": token.get("network", ""),
-                                    "Token ID": token.get("token_id", "")
-                                })
+                                # Only include tokens with amount > 0.00001
+                                # Convert amount to float to avoid type comparison errors
+                                token_amount = 0
+                                try:
+                                    token_amount = float(token.get("amount", 0))
+                                except (ValueError, TypeError) as e:
+                                    # Handle case where amount might be a string or None
+                                    print(f"⚠️ Error converting AAVE token amount to float: {token.get('symbol', 'unknown')}, value: {token.get('amount')}, error: {str(e)}")
+                                    token_amount = 0
+                                    
+                                if token_amount > 0.00001:
+                                    aave_rows.append({
+                                        "Timestamp": current_timestamp,
+                                        "Wallet Address": wallet_address,
+                                        "Portfolio": portfolio_name,
+                                        "Strategy": strategy,
+                                        "Token Symbol": token.get("symbol", ""),
+                                        "Token Name": token.get("name", ""),
+                                        "Token Address": token.get("address", ""),
+                                        "Amount": token.get("amount", 0),
+                                        "Raw Amount": token.get("raw_amount", 0),
+                                        "Decimals": token.get("decimals", 0),
+                                        "Network": token.get("network", ""),
+                                        "Token ID": token.get("token_id", "")
+                                    })
                         
                         # Create DataFrame and write to Excel
                         if aave_rows:
@@ -349,7 +365,6 @@ async def generate_excel_report(
                     
                     # Process all positions across all wallets directly
                     all_positions = []
-                    token_symbols = set()  # Collect unique token symbols
                     
                     for wallet_info in wallet_addresses:
                         print(f"Processing Uniswap wallet: {wallet_info['address']}")
@@ -362,12 +377,6 @@ async def generate_excel_report(
                                 position["portfolio"] = wallet_info["portfolio"]
                                 if "strategy" in wallet_info:
                                     position["strategy"] = wallet_info["strategy"]
-                                
-                                # Collect token symbols for price fetching
-                                if "token0" in position and "symbol" in position["token0"]:
-                                    token_symbols.add(position["token0"]["symbol"].upper())
-                                if "token1" in position and "symbol" in position["token1"]:
-                                    token_symbols.add(position["token1"]["symbol"].upper())
                         
                         # Only include valid positions (no errors)
                         valid_wallet_positions = [p for p in positions_data if "error" not in p]
@@ -379,132 +388,119 @@ async def generate_excel_report(
                     debug_info["uniswap_count"] = positions_count
                     
                     print(f"FOUND {positions_count} UNISWAP POSITIONS DIRECTLY")
-                    print(f"FOUND {len(token_symbols)} UNIQUE TOKEN SYMBOLS: {sorted(list(token_symbols))}")
                     
-                    # Get token prices now that we know all the symbols
-                    token_prices = {}
-                    if token_symbols:
-                        try:
-                            # Use the CoinMetricsService directly
-                            from coinmetrics import CoinMetricsService
-                            coinmetrics = CoinMetricsService()
+                    # Calculate USD values using the CoinMetricsService
+                    if positions_count > 0:
+                        # Extract token symbols from positions
+                        token_symbols = set()
+                        for position in positions:
+                            if "token0" in position and "symbol" in position["token0"]:
+                                token_symbols.add(position["token0"]["symbol"].upper())
+                            if "token1" in position and "symbol" in position["token1"]:
+                                token_symbols.add(position["token1"]["symbol"].upper())
+                        
+                        # Get prices for all tokens at once
+                        token_prices = {}
+                        if token_symbols:
+                            try:
+                                from coinmetrics import CoinMetricsService
+                                coinmetrics = CoinMetricsService()
+                                token_prices = coinmetrics.fetch_token_prices_sync(list(token_symbols))
+                                print(f"Fetched prices for {len(token_prices)} tokens")
+                            except Exception as e:
+                                print(f"Error fetching token prices: {e}")
+                        
+                        # Calculate values for all positions
+                        for position in positions:
+                            token0_symbol = position["token0"]["symbol"].upper()
+                            token1_symbol = position["token1"]["symbol"].upper()
+                            token0_amount = float(position["token0"]["amount"])
+                            token1_amount = float(position["token1"]["amount"])
                             
-                            print(f"Fetching prices for tokens: {sorted(list(token_symbols))}")
-                            token_prices = coinmetrics.fetch_token_prices_sync(list(token_symbols))
-                            print(f"Successfully fetched prices: {token_prices}")
-                        except Exception as price_e:
-                            print(f"Error fetching token prices: {price_e}")
-                    
-                    # Now calculate USD values for each position
-                    for position in positions:
-                        try:
-                            token0_symbol = position['token0']['symbol'].upper()
-                            token1_symbol = position['token1']['symbol'].upper()
-                            token0_amount = float(position['token0']['amount'])
-                            token1_amount = float(position['token1']['amount'])
-                            
-                            # Get token prices (default to 0 if not available)
-                            # Handle common token symbol mismatches
-                            token0_price = 0
-                            token1_price = 0
-                            
-                            # Try direct symbol match first
-                            if token0_symbol in token_prices:
-                                token0_price = token_prices[token0_symbol]
-                            # Try special cases for wrapped tokens (WETH -> ETH, etc.)
-                            elif token0_symbol.startswith('W') and token0_symbol[1:] in token_prices:
-                                token0_price = token_prices[token0_symbol[1:]]
-                            
-                            # Same for token1
-                            if token1_symbol in token_prices:
-                                token1_price = token_prices[token1_symbol]
-                            elif token1_symbol.startswith('W') and token1_symbol[1:] in token_prices:
-                                token1_price = token_prices[token1_symbol[1:]]
-                            
-                            # Log for debugging
-                            print(f"Position {position.get('token_id', 'unknown')}: Token0: {token0_symbol}, Price: {token0_price}")
-                            print(f"Position {position.get('token_id', 'unknown')}: Token1: {token1_symbol}, Price: {token1_price}")
+                            # Get prices, handling wrapped tokens
+                            token0_price = token_prices.get(token0_symbol, 0)
+                            if token0_price == 0 and token0_symbol.startswith("W"):
+                                token0_price = token_prices.get(token0_symbol[1:], 0)
+                                
+                            token1_price = token_prices.get(token1_symbol, 0)
+                            if token1_price == 0 and token1_symbol.startswith("W"):
+                                token1_price = token_prices.get(token1_symbol[1:], 0)
                             
                             # Calculate USD values
-                            token0_value_usd = token0_amount * token0_price
-                            token1_value_usd = token1_amount * token1_price
-                            total_value_usd = token0_value_usd + token1_value_usd
-                            
-                            # Add to position data
-                            position['token0_value_usd'] = token0_value_usd
-                            position['token1_value_usd'] = token1_value_usd
-                            position['total_value_usd'] = total_value_usd
-                        except Exception as price_e:
-                            print(f"Error calculating USD values for position {position.get('token_id', 'unknown')}: {price_e}")
-                            position['token0_value_usd'] = 0
-                            position['token1_value_usd'] = 0
-                            position['total_value_usd'] = 0
-                    
-                    # Dump first position for debugging
-                    if positions_count > 0:
-                        first_pos = positions[0]
-                        print(f"FIRST POSITION: {first_pos}")
-                        pos_id = first_pos.get("token_id", "unknown")
-                        print(f"FIRST POSITION ID: {pos_id}")
-                        print(f"SAMPLE POSITION KEYS: {list(first_pos.keys())}")
-                        print(f"POSITION HAS TOKEN0 VALUE USD: {first_pos.get('token0_value_usd', 'N/A')}")
+                            position["token0_value_usd"] = token0_amount * token0_price
+                            position["token1_value_usd"] = token1_amount * token1_price
+                            position["total_value_usd"] = position["token0_value_usd"] + position["token1_value_usd"]
                         
-                        # Direct and simple approach - just add all fields to Excel
+                        # Create excel rows with formatted data
                         excel_positions = []
+                        # Get current timestamp for all records
+                        current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
                         for pos in positions:
-                            # Create row with all available fields to debug
-                            row = {}
+                            # Only include positions where token amounts are > 0.00001
+                            # Safely convert to float with error handling
+                            token0_amount = 0
+                            token1_amount = 0
                             
-                            # Add basic position information
-                            row["Position ID"] = pos.get("token_id", "")
-                            row["Portfolio"] = pos.get("portfolio", "")
-                            row["Strategy"] = pos.get("strategy", "")
-                            row["Wallet Address"] = pos.get("wallet_address", "")
-                            
-                            # Add token information
-                            if "token0" in pos and "token1" in pos:
-                                row["Token0 Symbol"] = pos["token0"].get("symbol", "")
-                                row["Token1 Symbol"] = pos["token1"].get("symbol", "")
-                                row["Token0 Amount"] = float(pos["token0"].get("amount", 0))
-                                row["Token1 Amount"] = float(pos["token1"].get("amount", 0))
-                                row["Token Pair"] = f"{row['Token0 Symbol']}-{row['Token1 Symbol']}"
-                            
-                            # Add USD values
-                            row["Token0 Value USD"] = pos.get("token0_value_usd", 0)
-                            row["Token1 Value USD"] = pos.get("token1_value_usd", 0)
-                            row["Total Value USD"] = pos.get("total_value_usd", 0)
-                            
-                            # Add position status
-                            if "position" in pos:
-                                liquidity = int(pos["position"].get("liquidity", 0))
-                                row["Status"] = "Active" if liquidity > 0 else "Closed"
+                            try:
+                                token0_amount = float(pos["token0"]["amount"])
+                            except (ValueError, TypeError, KeyError):
+                                token0_amount = 0
                                 
-                                # Add price status for active positions
-                                if liquidity > 0 and "pool" in pos:
-                                    current_tick = pos["pool"].get("current_tick", 0)
-                                    tick_lower = pos["position"].get("tick_lower", 0)
-                                    tick_upper = pos["position"].get("tick_upper", 0)
+                            try:
+                                token1_amount = float(pos["token1"]["amount"])
+                            except (ValueError, TypeError, KeyError):
+                                token1_amount = 0
+                            
+                            if token0_amount > 0.00001 or token1_amount > 0.00001:
+                                row = {
+                                    "Timestamp": current_timestamp,
+                                    "Portfolio": pos.get("portfolio", ""),
+                                    "Strategy": pos.get("strategy", ""),
+                                    "Token Pair": f"{pos['token0']['symbol']}-{pos['token1']['symbol']}",
+                                    "Token0 Amount": token0_amount,
+                                    "Token1 Amount": token1_amount,
+                                    "Token0 Value USD": pos["token0_value_usd"],
+                                    "Token1 Value USD": pos["token1_value_usd"],
+                                    "Total Value USD": pos["total_value_usd"],
+                                    "Token0 Symbol": pos["token0"]["symbol"],
+                                    "Token1 Symbol": pos["token1"]["symbol"],
+                                    "Position ID": pos.get("token_id", ""),
+                                    "Wallet Address": pos.get("wallet_address", "")
+                                }
+                                
+                                # Add position status
+                                if "position" in pos:
+                                    liquidity = int(pos["position"].get("liquidity", 0))
+                                    row["Status"] = "Active" if liquidity > 0 else "Closed"
                                     
-                                    if tick_lower <= current_tick <= tick_upper:
-                                        row["Price Status"] = "In Range"
-                                    elif current_tick < tick_lower:
-                                        row["Price Status"] = "Below Range"
+                                    # Add price status for active positions
+                                    if liquidity > 0 and "pool" in pos:
+                                        current_tick = pos["pool"].get("current_tick", 0)
+                                        tick_lower = pos["position"].get("tick_lower", 0)
+                                        tick_upper = pos["position"].get("tick_upper", 0)
+                                        
+                                        if tick_lower <= current_tick <= tick_upper:
+                                            row["Price Status"] = "In Range"
+                                        elif current_tick < tick_lower:
+                                            row["Price Status"] = "Below Range"
+                                        else:
+                                            row["Price Status"] = "Above Range"
                                     else:
-                                        row["Price Status"] = "Above Range"
-                                else:
-                                    row["Price Status"] = "N/A"
-                            
-                            # Add pool information
-                            if "pool" in pos:
-                                row["Fee Tier"] = f"{pos['pool'].get('fee', 0)}%"
-                            
-                            excel_positions.append(row)
+                                        row["Price Status"] = "N/A"
+                                
+                                # Add pool information
+                                if "pool" in pos:
+                                    row["Fee Tier"] = f"{pos['pool'].get('fee', 0)}%"
+                                
+                                excel_positions.append(row)
                         
                         # Create DataFrame and add to Excel
                         uniswap_df = pd.DataFrame(excel_positions)
-                        print(f"ADDING UNISWAP SHEET WITH {len(excel_positions)} POSITIONS")
-                        print(f"COLUMNS: {list(uniswap_df.columns)}")
+                        
+                        # Sort by total value (highest first)
+                        if "Total Value USD" in uniswap_df.columns:
+                            uniswap_df = uniswap_df.sort_values("Total Value USD", ascending=False)
                         
                         # Write to Excel
                         uniswap_df.to_excel(writer, sheet_name="Uniswap Positions", index=False)
@@ -517,9 +513,8 @@ async def generate_excel_report(
                         # Define number formats
                         usd_format = workbook.add_format({'num_format': '$#,##0.00'})
                         token_format = workbook.add_format({'num_format': '0.000000'})
-                        percent_format = workbook.add_format({'num_format': '0.00%'})
                         
-                        # Auto-adjust column widths and apply formatting
+                        # Apply formatting
                         for idx, col in enumerate(uniswap_df.columns):
                             # Get column letter
                             col_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + idx % 26)
@@ -529,9 +524,6 @@ async def generate_excel_report(
                                 worksheet.set_column(f'{col_letter}:{col_letter}', 15, usd_format)
                             elif 'Amount' in col:
                                 worksheet.set_column(f'{col_letter}:{col_letter}', 15, token_format)
-                            elif 'Fee' in col and 'Tier' in col:
-                                # Skip fee tier as it's already formatted as a string with %
-                                worksheet.set_column(f'{col_letter}:{col_letter}', 10)
                             else:
                                 # Ensure column width is adequate for other columns
                                 max_len = max(uniswap_df[col].astype(str).map(len).max(), len(col)) + 2
@@ -610,11 +602,14 @@ async def generate_excel_report(
                 if market_data and "data" in market_data:
                     # Create a DataFrame for market data
                     market_rows = []
+                    # Get current timestamp for all records
+                    current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     
                     # Process the data
                     for item in market_data["data"]:
                         if "asset" in item and "ReferenceRate" in item:
                             market_rows.append({
+                                "Timestamp": current_timestamp,
                                 "Asset": item["asset"].upper(),
                                 "Price (USD)": float(item["ReferenceRate"]),
                                 "Time": pd.to_datetime(item["time"]).strftime("%Y-%m-%d %H:%M:%S") if "time" in item else ""

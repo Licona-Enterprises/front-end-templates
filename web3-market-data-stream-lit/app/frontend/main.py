@@ -13,9 +13,16 @@ if 'last_refresh' not in st.session_state:
     st.session_state.refresh_count = 0
     st.session_state.previous_prices = {}
     st.session_state.eth_price = 0
-    st.session_state.global_download_clicked = False
     st.session_state.tab_change_enabled = True
     st.session_state._current_tab = 0
+    st.session_state._previous_tab = 0
+    # Initialize refresh tracking for Uniswap and AAVE tabs
+    st.session_state.uniswap_last_refresh = time.time()
+    st.session_state.uniswap_refresh_count = 0
+    st.session_state.aave_last_refresh = time.time()
+    st.session_state.aave_refresh_count = 0
+    # Initialize Excel download states
+    st.session_state.show_download = False
 
 # Direct import using explicit file path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -24,7 +31,6 @@ DEFAULT_ASSETS = consts.DEFAULT_ASSETS
 METRIC_FREQUENCIES = consts.METRIC_FREQUENCIES
 AUTO_REFRESH_INTERVAL = consts.AUTO_REFRESH_INTERVAL
 
-from portfolio import render_portfolio_page  # Import the portfolio module
 from uniswap import render_uniswap_page  # Import the uniswap module
 from aave import render_aave_page  # Import the aave module
 from api_service import ApiService  # Import the API service
@@ -86,6 +92,7 @@ st.markdown("""
     .download-button {
         padding: 0.5rem 1rem;
     }
+    [data-testid="stRadio"] {display: none}
 </style>
 """, unsafe_allow_html=True)
 
@@ -99,7 +106,6 @@ def get_excel_report():
         # Simple direct URL
         download_url = f"{api_base_url}/api/report/positions-excel?include_uniswap=true"
         
-        st.write("Requesting Excel report with Uniswap data...")
         print(f"REQUESTING EXCEL REPORT FROM: {download_url}")
         
         # Make the request
@@ -127,54 +133,58 @@ with header_col1:
     st.title("Quant Dashboard")
 
 with header_col2:
-    # Create a download button placeholder
-    download_placeholder = st.empty()
+    # Create a direct download button that properly handles Excel data
     
-    # Check if we're in a download state
-    if 'global_download_clicked' in st.session_state and st.session_state.global_download_clicked:
-        with st.spinner("Downloading Excel report..."):
-            # Clear status placeholder
-            status = st.empty()
-            status.info("Requesting Excel report with Uniswap data...")
-            
-            # Get the report
-            excel_data, error = get_excel_report()
-            
-            if excel_data:
-                # Show success and download button
-                status.success("Excel report ready!")
-                
-                download_placeholder.download_button(
-                    label="📥 Download Excel Report",
-                    data=excel_data,
-                    file_name="positions_report.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="global_download_excel_file",
-                    on_click=lambda: setattr(st.session_state, 'global_download_clicked', False)
-                )
-            else:
-                # Show error
-                status.error(f"Failed to get report: {error}")
-                
-                # Reset download state
-                st.session_state.global_download_clicked = False
-                
-                # Show retry button
-                download_placeholder.button(
-                    "Try Again", 
-                    key="global_excel_button_reset",
-                    on_click=lambda: setattr(st.session_state, 'global_download_clicked', True)
-                )
+    # Show different UI based on download state
+    if 'download_error' in st.session_state:
+        # Show error from previous attempt
+        st.error(f"Download failed: {st.session_state.download_error}")
+        if st.button("Try Again"):
+            del st.session_state.download_error
+            st.rerun()
     else:
-        # Show the initial download button
-        download_placeholder.button(
-            "📊 Download Excel Report with Uniswap Data", 
-            key="global_excel_button",
-            on_click=lambda: setattr(st.session_state, 'global_download_clicked', True)
-        )
+        # Show either the download button or a spinner
+        if st.button("📊 Snapshot All Position Data", key="excel_button"):
+            # Start the downloading process
+            with st.spinner("Preparing Excel report..."):
+                try:
+                    # Fetch the Excel data
+                    excel_data, error = get_excel_report()
+                    
+                    if excel_data:
+                        # Store the data in session state for the rerun
+                        st.session_state.excel_data = excel_data
+                        st.session_state.show_download = True
+                    else:
+                        st.session_state.download_error = error
+                except Exception as e:
+                    st.session_state.download_error = str(e)
+                
+                # Force a rerun to show the download button or error
+                st.rerun()
+                
+        # Show the actual download button if we have data
+        if 'show_download' in st.session_state and st.session_state.show_download:
+            # Display the download button with the data
+            st.download_button(
+                label="📥 Download Excel Report",
+                data=st.session_state.excel_data,
+                file_name="positions_report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_excel_file",
+                on_click=lambda: (
+                    setattr(st.session_state, 'show_download', False),
+                    st.session_state.pop('excel_data', None)
+                )
+            )
 
 # Define assets we want to track - use constants
 ASSETS = DEFAULT_ASSETS
+
+# Define refresh intervals
+MARKET_DATA_REFRESH_INTERVAL = AUTO_REFRESH_INTERVAL  # From consts.py
+UNISWAP_REFRESH_INTERVAL = AUTO_REFRESH_INTERVAL      # From consts.py
+AAVE_REFRESH_INTERVAL = AUTO_REFRESH_INTERVAL         # From consts.py
 
 # Define metrics with their frequencies and display names
 METRICS = {
@@ -201,9 +211,46 @@ def fetch_market_data():
     return market_data
 
 # Create tabs for different sections
-tab1, tab2, tab3, tab4 = st.tabs(["Market Data", "Portfolio Balances", "Uniswap Positions", "AAVE Positions"])
+tab_names = ["Market Data", "Uniswap Positions", "AAVE Positions"]
 
-with tab1:
+# Create a hidden radio button that tracks the tab state 
+# This is necessary because Streamlit doesn't provide a direct way to detect tab changes
+# The radio button acts as a state tracker but is hidden from users
+st.markdown("""
+<style>
+    [data-testid="stRadio"] {display: none}
+</style>
+""", unsafe_allow_html=True)
+
+current_tab_radio = st.radio(
+    "Tabs",
+    tab_names,
+    key="tab_selection",
+    index=st.session_state.get('_current_tab', 0),
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+# Update the current tab in session state
+current_tab_index = tab_names.index(current_tab_radio)
+prev_tab = st.session_state.get('_current_tab', 0)
+
+# Check if tab has changed
+if current_tab_index != prev_tab:
+    # Update last refresh time when changing to a new tab
+    if current_tab_index == 1 and prev_tab != 1:  # Changed to Uniswap
+        st.session_state.uniswap_last_refresh = time.time()
+    elif current_tab_index == 2 and prev_tab != 2:  # Changed to AAVE
+        st.session_state.aave_last_refresh = time.time()
+    
+    # Store the new tab index
+    st.session_state._previous_tab = prev_tab
+    st.session_state._current_tab = current_tab_index
+
+# Create the tabs that respond to the radio selection
+tabs = st.tabs(tab_names)
+
+with tabs[0]:
     # Create columns for header area
     col1, col2 = st.columns([3, 1])
 
@@ -454,15 +501,11 @@ with tab1:
     if missing_assets:
         st.warning(f"No price data available for: {', '.join(missing_assets)}. This may be due to API limitations.")
 
-with tab2:
-    # Render portfolio page from imported module
-    render_portfolio_page(api_service)
-
-with tab3:
+with tabs[1]:
     # Render uniswap page from imported module
     render_uniswap_page(api_service)
 
-with tab4:
+with tabs[2]:
     # Render aave page from imported module
     render_aave_page(api_service)
 
@@ -470,8 +513,31 @@ with tab4:
 if "tab_change_enabled" not in st.session_state:
     st.session_state.tab_change_enabled = True
     st.session_state._current_tab = 0
+    st.session_state._previous_tab = 0
 
-# Force refresh for tab 1 data (market data) only - use the constant
-if st.session_state.get('_current_tab', 0) == 0:
-    time.sleep(AUTO_REFRESH_INTERVAL)
+# Force refresh for tabs based on their specific refresh intervals
+current_tab = st.session_state.get('_current_tab', 0)
+
+if current_tab == 0:  # Market Data tab
+    time_since_refresh = time.time() - st.session_state.last_refresh
+    if time_since_refresh >= MARKET_DATA_REFRESH_INTERVAL:
+        # We'll fetch fresh data next cycle
+        pass
+    time.sleep(1)  # Small sleep to prevent excessive CPU usage
+    st.rerun()
+elif current_tab == 1:  # Uniswap tab
+    time_since_refresh = time.time() - st.session_state.uniswap_last_refresh
+    if time_since_refresh >= UNISWAP_REFRESH_INTERVAL:
+        st.session_state.uniswap_last_refresh = time.time()
+        st.session_state.uniswap_refresh_count += 1
+        st.rerun()
+    time.sleep(1)  # Small sleep to prevent excessive CPU usage
+    st.rerun()
+elif current_tab == 2:  # AAVE tab
+    time_since_refresh = time.time() - st.session_state.aave_last_refresh
+    if time_since_refresh >= AAVE_REFRESH_INTERVAL:
+        st.session_state.aave_last_refresh = time.time()
+        st.session_state.aave_refresh_count += 1
+        st.rerun()
+    time.sleep(1)  # Small sleep to prevent excessive CPU usage
     st.rerun()
